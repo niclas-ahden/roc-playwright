@@ -1,0 +1,193 @@
+# LLM Docs
+
+## Compact Docs
+
+Copy just this section if you want to keep your context small.
+If you want all docs, check the section `Full Docs per Module` below.
+
+Playwright.BrowserType : [ Chromium, Firefox, WebKit ]
+Playwright.WaitUntil : [ Load, DomContentLoaded, NetworkIdle, Commit ]
+Playwright.launch! : BrowserType => Result Browser
+Playwright.launch_with! : { browser_type : BrowserType, headless : Bool, timeout : Timeout } => Result Browser
+
+## Full Docs per Module
+### Playwright
+
+BrowserType : [ Chromium, Firefox, WebKit ]
+
+Description:
+Which browser engine to use.
+
+Description:
+Timeout for operations. `NoTimeout` means wait indefinitely.
+
+Description:
+Handle to a browser instance. Returned by `launch!`.
+
+Description:
+A browser context with isolated session state.
+
+Description:
+A page (browser tab) where automation happens.
+
+WaitUntil : [ Load, DomContentLoaded, NetworkIdle, Commit ]
+
+Description:
+When to consider navigation complete.
+
+launch! : BrowserType => Result Browser
+
+Description:
+Launches a browser and returns a handle to it.
+
+```
+browser = Playwright.launch!(Chromium)?
+```
+
+Runs headless with a 30 second timeout. Use [launch_with!] for more control.
+
+launch_with! : { browser_type : BrowserType, headless : Bool, timeout : Timeout } => Result Browser
+
+Description:
+Launches a browser with custom options.
+
+```
+browser = Playwright.launch_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(60000) })?
+```
+
+Description:
+Launches a browser with a ready-to-use page.
+
+Description:
+Launches a browser with custom options and a ready-to-use page.
+
+Description:
+Creates a new browser context with isolated session state.
+
+Description:
+Creates a new page in the browser context.
+
+Description:
+Navigates to a URL.
+
+```
+Playwright.navigate!(page, "https://example.com")?
+```
+
+Description:
+Navigates to a URL with options.
+
+```
+Playwright.navigate_with!(page, { url: "https://example.com", wait_until: DomContentLoaded })?
+```
+
+Description:
+Returns the page title.
+
+```
+title = Playwright.get_title!(page)?
+```
+
+Description:
+Returns the text content of an element.
+
+```
+text = Playwright.text_content!(page, "h1")?
+```
+
+Fails if the element has no text content (is empty).
+
+Description:
+Returns the value of an input or textarea element.
+
+```
+value = Playwright.input_value!(page, "#email")?
+```
+
+Description:
+Returns an attribute value from an element.
+
+```
+href = Playwright.get_attribute!(page, "a.nav-link", "href")?
+```
+
+Fails if the attribute doesn't exist on the element.
+
+Description:
+Clicks an element.
+
+```
+Playwright.click!(page, "button#submit")?
+```
+
+Description:
+Fills an input or textarea with text.
+
+```
+Playwright.fill!(page, "#email", "user@example.com")?
+```
+
+Replaces any existing content. This is the fastest way to enter text.
+
+> **Note:** For WASM apps that rely on keyboard events, use `press_sequentially!`
+> instead. `fill!` sets the value programmatically and dispatches a synthetic
+> `input` event, which some frameworks don't handle.
+
+Description:
+Types text character by character, triggering key events for each character.
+Use this instead of `fill!` when the page has special keyboard handling (e.g., WASM apps).
+
+```roc
+Playwright.press_sequentially!(page, "#search", "hello")?
+```
+
+Description:
+Moves the mouse to the center of an element.
+
+Description:
+Returns `Bool.true` if the element is visible, `Bool.false` otherwise.
+
+```
+is_shown = Playwright.is_visible!(page, "#modal")?
+```
+
+Returns immediately without waiting. Returns `Bool.false` for non-existent elements.
+
+Description:
+Waits for an element matching the selector to appear and be visible.
+
+```
+Playwright.wait_for_selector!(page, "#loading-spinner")?
+```
+
+Times out based on the browser's configured timeout.
+
+Description:
+Returns the number of elements matching a selector.
+
+```
+count = Playwright.query_count!(page, "ul.results li")?
+```
+
+Returns `0` if no elements match (does not fail).
+
+Description:
+Moves the mouse to the specified coordinates.
+
+Description:
+Moves the mouse to the specified coordinates with interpolated steps.
+Use `steps` > 1 for drag operations.
+
+Description:
+Presses the left mouse button at the current position.
+
+Description:
+Releases the left mouse button at the current position.
+
+Description:
+Closes the browser and terminates the driver process.
+
+```
+Playwright.close!(browser)?
+```
+

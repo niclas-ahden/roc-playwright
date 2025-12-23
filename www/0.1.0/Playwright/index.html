@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Playwright - Documentation</title>
+    <!-- <meta name="description" content="TODO populate this based on the module's description"> -->
+    <meta name="viewport" content="width=device-width" />
+    <base href="/roc-playwright/0.1.0/" />
+    <script type="text/javascript" src="search.js" defer></script>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="/favicon.svg" />
+    <!-- Safari ignores rel="icon" and only respects rel="mask-icon". It will render the SVG with
+    fill="#000" unless this `color` attribute here is hardcoded (not a CSS `var()`) to override it.
+  -->
+    <link rel="mask-icon" href="/favicon.svg" color="#7d59dd" />
+    <link rel="prefetch" href="Playwright"/>
+</head>
+
+<body>
+    <nav id="sidebar-nav">
+        <div class="pkg-and-logo">
+            <a class="logo" href="/" aria-labelledby="logo-link">
+                <svg viewBox="0 -6 51 58" fill="none" xmlns="http://www.w3.org/2000/svg" aria-labelledby="logo-link"
+                    role="img">
+                    <title id="logo-link">Return to Roc packages</title>
+                    <polygon role="presentation"
+                        points="0,0 23.8834,3.21052 37.2438,19.0101 45.9665,16.6324 50.5,22 45,22 44.0315,26.3689 26.4673,39.3424 27.4527,45.2132 17.655,53 23.6751,22.7086" />
+                </svg>
+            </a>
+            <h1 class="pkg-full-name" ><a href="/roc-playwright/0.1.0/" >Documentation</a></h1>
+            <button class="menu-toggle" aria-label="Toggle sidebar">
+                <svg viewBox="0 0 72 72" id="emoji" xmlns="http://www.w3.org/2000/svg" fill="currentcolor">
+                    <g id="SVGRepo_iconCarrier">
+                        <g id="color"></g>
+                        <g id="hair"></g>
+                        <g id="skin"></g>
+                        <g id="skin-shadow"></g>
+                        <g id="line">
+                            <line x1="16" x2="56" y1="26" y2="26" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                            <line x1="16" x2="56" y1="36" y2="36" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                            <line x1="16" x2="56" y1="46" y2="46" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                        </g>
+                    </g>
+                </svg>
+            </button>
+        </div>
+        <div class="module-links-container">
+            <div class="module-links">
+                <div class="sidebar-entry" ><a class="sidebar-module-link" href="Playwright" data-module-name="Playwright" ><span >Playwright</span><button class="entry-toggle" >▶</button></a><div class="sidebar-sub-entries" ><a href="Playwright#BrowserType" >BrowserType</a><a href="Playwright#Timeout" >Timeout</a><a href="Playwright#Browser" >Browser</a><a href="Playwright#Context" >Context</a><a href="Playwright#Page" >Page</a><a href="Playwright#WaitUntil" >WaitUntil</a><a href="Playwright#launch!" >launch!</a><a href="Playwright#launch_with!" >launch_with!</a><a href="Playwright#launch_page!" >launch_page!</a><a href="Playwright#launch_page_with!" >launch_page_with!</a><a href="Playwright#new_context!" >new_context!</a><a href="Playwright#new_page!" >new_page!</a><a href="Playwright#navigate!" >navigate!</a><a href="Playwright#navigate_with!" >navigate_with!</a><a href="Playwright#get_title!" >get_title!</a><a href="Playwright#text_content!" >text_content!</a><a href="Playwright#input_value!" >input_value!</a><a href="Playwright#get_attribute!" >get_attribute!</a><a href="Playwright#click!" >click!</a><a href="Playwright#fill!" >fill!</a><a href="Playwright#press_sequentially!" >press_sequentially!</a><a href="Playwright#hover!" >hover!</a><a href="Playwright#is_visible!" >is_visible!</a><a href="Playwright#wait_for_selector!" >wait_for_selector!</a><a href="Playwright#query_count!" >query_count!</a><a href="Playwright#mouse_move!" >mouse_move!</a><a href="Playwright#mouse_move_with_steps!" >mouse_move_with_steps!</a><a href="Playwright#mouse_down!" >mouse_down!</a><a href="Playwright#mouse_up!" >mouse_up!</a><a href="Playwright#close!" >close!</a></div></div>
+            </div>
+        </div>
+    </nav>
+    <main>
+        <form id="module-search-form">
+            <button class="menu-toggle" aria-label="Toggle sidebar">
+                <svg viewBox="0 0 72 72" id="emoji" xmlns="http://www.w3.org/2000/svg" fill="currentcolor">
+                    <g id="SVGRepo_iconCarrier">
+                        <g id="color"></g>
+                        <g id="hair"></g>
+                        <g id="skin"></g>
+                        <g id="skin-shadow"></g>
+                        <g id="line">
+                            <line x1="16" x2="56" y1="26" y2="26" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                            <line x1="16" x2="56" y1="36" y2="36" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                            <line x1="16" x2="56" y1="46" y2="46" fill="none" stroke="currentColor"
+                                stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" stroke-width="2">
+                            </line>
+                        </g>
+                    </g>
+                </svg>
+            </button>
+            <input id="module-search" aria-labelledby="search-label" type="text"
+                placeholder="Search Documentation" role="combobox" aria-autocomplete="list"
+                aria-expanded="false" aria-controls="search-type-ahead" />
+            <label for="module-search" id="search-label">(press
+                <span id="search-shortcut-key" aria-hidden="true">s</span>)</label>
+            <!-- Magnifying Glass icon -->
+            <svg version="1.1" xmlns="http://www.w3.org/2000/svg" class="search-icon"
+                xmlns:xlink="http://www.w3.org/1999/xlink" width="24px" height="24px" viewBox="0 0 512 512"
+                xml:space="preserve">
+                <g>
+                    <path d="M449.803,62.197C408.443,20.807,353.85-0.037,299.646-0.006C245.428-0.037,190.85,20.807,149.49,62.197
+		C108.1,103.557,87.24,158.15,87.303,212.338c-0.047,37.859,10.359,75.766,30.547,109.359L15.021,424.525
+		c-20.016,20.016-20.016,52.453,0,72.469c20,20.016,52.453,20.016,72.453,0L190.318,394.15
+		c33.578,20.203,71.5,30.594,109.328,30.547c54.203,0.047,108.797-20.797,150.156-62.188
+		c41.375-41.359,62.234-95.938,62.188-150.172C512.053,158.15,491.178,103.557,449.803,62.197z M391.818,304.541
+		c-25.547,25.531-58.672,38.125-92.172,38.188c-33.5-0.063-66.609-12.656-92.188-38.188c-25.531-25.578-38.125-58.688-38.188-92.203
+		c0.063-33.484,12.656-66.609,38.188-92.172c25.578-25.531,58.688-38.125,92.188-38.188c33.5,0.063,66.625,12.656,92.188,38.188
+		c25.531,25.563,38.125,58.688,38.188,92.172C429.959,245.854,417.365,278.963,391.818,304.541z"></path>
+                </g>
+            </svg>
+            <ul id="search-type-ahead" role="listbox" aria-label="Search Results" class="hidden">
+                <li role="option" ><a href="Playwright#BrowserType" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >BrowserType</span><span class="type-ahead-signature" > : 
+    [
+        Chromium,
+        Firefox,
+        WebKit
+    ]</span></a></li><li role="option" ><a href="Playwright#Timeout" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >Timeout</span></a></li><li role="option" ><a href="Playwright#Browser" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >Browser</span></a></li><li role="option" ><a href="Playwright#Context" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >Context</span></a></li><li role="option" ><a href="Playwright#Page" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >Page</span></a></li><li role="option" ><a href="Playwright#WaitUntil" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >WaitUntil</span><span class="type-ahead-signature" > : 
+    [
+        Load,
+        DomContentLoaded,
+        NetworkIdle,
+        Commit
+    ]</span></a></li><li role="option" ><a href="Playwright#launch!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >launch!</span><span class="type-ahead-signature" > : BrowserType => Result Browser </span></a></li><li role="option" ><a href="Playwright#launch_with!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >launch_with!</span><span class="type-ahead-signature" > :     
+    {
+        browser_type : BrowserType,
+        headless : Bool,
+        timeout : Timeout
+    }
+    => Result Browser </span></a></li><li role="option" ><a href="Playwright#launch_page!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >launch_page!</span></a></li><li role="option" ><a href="Playwright#launch_page_with!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >launch_page_with!</span></a></li><li role="option" ><a href="Playwright#new_context!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >new_context!</span></a></li><li role="option" ><a href="Playwright#new_page!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >new_page!</span></a></li><li role="option" ><a href="Playwright#navigate!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >navigate!</span></a></li><li role="option" ><a href="Playwright#navigate_with!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >navigate_with!</span></a></li><li role="option" ><a href="Playwright#get_title!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >get_title!</span></a></li><li role="option" ><a href="Playwright#text_content!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >text_content!</span></a></li><li role="option" ><a href="Playwright#input_value!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >input_value!</span></a></li><li role="option" ><a href="Playwright#get_attribute!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >get_attribute!</span></a></li><li role="option" ><a href="Playwright#click!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >click!</span></a></li><li role="option" ><a href="Playwright#fill!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >fill!</span></a></li><li role="option" ><a href="Playwright#press_sequentially!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >press_sequentially!</span></a></li><li role="option" ><a href="Playwright#hover!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >hover!</span></a></li><li role="option" ><a href="Playwright#is_visible!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >is_visible!</span></a></li><li role="option" ><a href="Playwright#wait_for_selector!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >wait_for_selector!</span></a></li><li role="option" ><a href="Playwright#query_count!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >query_count!</span></a></li><li role="option" ><a href="Playwright#mouse_move!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >mouse_move!</span></a></li><li role="option" ><a href="Playwright#mouse_move_with_steps!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >mouse_move_with_steps!</span></a></li><li role="option" ><a href="Playwright#mouse_down!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >mouse_down!</span></a></li><li role="option" ><a href="Playwright#mouse_up!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >mouse_up!</span></a></li><li role="option" ><a href="Playwright#close!" class="type-ahead-link" ><span class="type-ahead-module-name" >Playwright</span><span class="type-ahead-module-dot" >.</span><span class="type-ahead-def-name" >close!</span></a></li>
+            </ul>
+        </form>
+        <h2 class="module-name" ><a href="/" >Playwright</a></h2><section><h3 id="BrowserType" class="entry-name" ><a href="Playwright#BrowserType" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">BrowserType</span><span class="kw"> :</span><span class="delimiter"> 
+    [</span><span class="upperident">
+        Chromium</span><span class="delimiter">,</span><span class="upperident">
+        Firefox</span><span class="delimiter">,</span><span class="upperident">
+        WebKit</span><span class="delimiter">
+    ]</span></code></h3><p>Which browser engine to use.</p>
+</section><section><h3 id="Timeout" class="entry-name" ><a href="Playwright#Timeout" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">Timeout</span></code></h3><p>Timeout for operations. <code>NoTimeout</code> means wait indefinitely.</p>
+</section><section><h3 id="Browser" class="entry-name" ><a href="Playwright#Browser" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">Browser</span></code></h3><p>Handle to a browser instance. Returned by <code>launch!</code>.</p>
+</section><section><h3 id="Context" class="entry-name" ><a href="Playwright#Context" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">Context</span></code></h3><p>A browser context with isolated session state.</p>
+</section><section><h3 id="Page" class="entry-name" ><a href="Playwright#Page" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">Page</span></code></h3><p>A page (browser tab) where automation happens.</p>
+</section><section><h3 id="WaitUntil" class="entry-name" ><a href="Playwright#WaitUntil" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="upperident">WaitUntil</span><span class="kw"> :</span><span class="delimiter"> 
+    [</span><span class="upperident">
+        Load</span><span class="delimiter">,</span><span class="upperident">
+        DomContentLoaded</span><span class="delimiter">,</span><span class="upperident">
+        NetworkIdle</span><span class="delimiter">,</span><span class="upperident">
+        Commit</span><span class="delimiter">
+    ]</span></code></h3><p>When to consider navigation complete.</p>
+</section><section><h3 id="launch!" class="entry-name" ><a href="Playwright#launch!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">launch</span><span class="op">!</span><span class="kw"> :</span><span class="upperident"> BrowserType</span><span class="kw"> =</span><span class="op">&gt;</span><span class="upperident"> Result</span><span class="upperident"> Browser</span></code></h3><p>Launches a browser and returns a handle to it.</p>
+<pre><samp><span class="lowerident">browser</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">launch</span><span class="op">!</span><span class="delimiter">(</span><span class="upperident">Chromium</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Runs headless with a 30 second timeout. Use <a href="/roc-playwright/0.1.0/Playwright#launch_with!" title="Docs for Playwright.launch_with!"><code>launch_with!</code></a> for more control.</p>
+</section><section><h3 id="launch_with!" class="entry-name" ><a href="Playwright#launch_with!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">launch</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="op">!</span><span class="kw"> :</span><span class="delimiter">     
+    {</span><span class="lowerident">
+        browser</span><span class="lowerident">_</span><span class="lowerident">type</span><span class="kw"> :</span><span class="upperident"> BrowserType</span><span class="delimiter">,</span><span class="lowerident">
+        headless</span><span class="kw"> :</span><span class="upperident"> Bool</span><span class="delimiter">,</span><span class="lowerident">
+        timeout</span><span class="kw"> :</span><span class="upperident"> Timeout</span><span class="delimiter">
+    }</span><span class="kw">
+    =</span><span class="op">&gt;</span><span class="upperident"> Result</span><span class="upperident"> Browser</span></code></h3><p>Launches a browser with custom options.</p>
+<pre><samp><span class="lowerident">browser</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">launch</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="op">!</span><span class="delimiter">(</span><span class="delimiter">{</span><span class="lowerident"> browser</span><span class="lowerident">_</span><span class="lowerident">type</span><span class="kw">:</span><span class="upperident"> Chromium</span><span class="delimiter">,</span><span class="lowerident"> headless</span><span class="kw">:</span><span class="upperident"> Bool</span><span class="delimiter">.</span><span class="lowerident">false</span><span class="delimiter">,</span><span class="lowerident"> timeout</span><span class="kw">:</span><span class="upperident"> TimeoutMilliseconds</span><span class="delimiter">(</span><span class="literal">60000</span><span class="delimiter">)</span><span class="delimiter"> }</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="launch_page!" class="entry-name" ><a href="Playwright#launch_page!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">launch</span><span class="lowerident">_</span><span class="lowerident">page</span><span class="op">!</span></code></h3><p>Launches a browser with a ready-to-use page.</p>
+</section><section><h3 id="launch_page_with!" class="entry-name" ><a href="Playwright#launch_page_with!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">launch</span><span class="lowerident">_</span><span class="lowerident">page</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="op">!</span></code></h3><p>Launches a browser with custom options and a ready-to-use page.</p>
+</section><section><h3 id="new_context!" class="entry-name" ><a href="Playwright#new_context!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">new</span><span class="lowerident">_</span><span class="lowerident">context</span><span class="op">!</span></code></h3><p>Creates a new browser context with isolated session state.</p>
+</section><section><h3 id="new_page!" class="entry-name" ><a href="Playwright#new_page!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">new</span><span class="lowerident">_</span><span class="lowerident">page</span><span class="op">!</span></code></h3><p>Creates a new page in the browser context.</p>
+</section><section><h3 id="navigate!" class="entry-name" ><a href="Playwright#navigate!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">navigate</span><span class="op">!</span></code></h3><p>Navigates to a URL.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">navigate</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "https://example.com"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="navigate_with!" class="entry-name" ><a href="Playwright#navigate_with!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">navigate</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="op">!</span></code></h3><p>Navigates to a URL with options.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">navigate</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="delimiter"> {</span><span class="lowerident"> url</span><span class="kw">:</span><span class="literal"> "https://example.com"</span><span class="delimiter">,</span><span class="lowerident"> wait</span><span class="lowerident">_</span><span class="lowerident">until</span><span class="kw">:</span><span class="upperident"> DomContentLoaded</span><span class="delimiter"> }</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="get_title!" class="entry-name" ><a href="Playwright#get_title!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">get</span><span class="lowerident">_</span><span class="lowerident">title</span><span class="op">!</span></code></h3><p>Returns the page title.</p>
+<pre><samp><span class="lowerident">title</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">get</span><span class="lowerident">_</span><span class="lowerident">title</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="text_content!" class="entry-name" ><a href="Playwright#text_content!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">text</span><span class="lowerident">_</span><span class="lowerident">content</span><span class="op">!</span></code></h3><p>Returns the text content of an element.</p>
+<pre><samp><span class="lowerident">text</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">text</span><span class="lowerident">_</span><span class="lowerident">content</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "h1"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Fails if the element has no text content (is empty).</p>
+</section><section><h3 id="input_value!" class="entry-name" ><a href="Playwright#input_value!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">input</span><span class="lowerident">_</span><span class="lowerident">value</span><span class="op">!</span></code></h3><p>Returns the value of an input or textarea element.</p>
+<pre><samp><span class="lowerident">value</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">input</span><span class="lowerident">_</span><span class="lowerident">value</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "#email"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="get_attribute!" class="entry-name" ><a href="Playwright#get_attribute!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">get</span><span class="lowerident">_</span><span class="lowerident">attribute</span><span class="op">!</span></code></h3><p>Returns an attribute value from an element.</p>
+<pre><samp><span class="lowerident">href</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">get</span><span class="lowerident">_</span><span class="lowerident">attribute</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "a.nav-link"</span><span class="delimiter">,</span><span class="literal"> "href"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Fails if the attribute doesn't exist on the element.</p>
+</section><section><h3 id="click!" class="entry-name" ><a href="Playwright#click!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">click</span><span class="op">!</span></code></h3><p>Clicks an element.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">click</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "button#submit"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="fill!" class="entry-name" ><a href="Playwright#fill!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">fill</span><span class="op">!</span></code></h3><p>Fills an input or textarea with text.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">fill</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "#email"</span><span class="delimiter">,</span><span class="literal"> "user@example.com"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Replaces any existing content. This is the fastest way to enter text.</p>
+<blockquote>
+<p><strong>Note:</strong> For WASM apps that rely on keyboard events, use <code>press_sequentially!</code>
+instead. <code>fill!</code> sets the value programmatically and dispatches a synthetic
+<code>input</code> event, which some frameworks don't handle.</p>
+</blockquote>
+</section><section><h3 id="press_sequentially!" class="entry-name" ><a href="Playwright#press_sequentially!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">press</span><span class="lowerident">_</span><span class="lowerident">sequentially</span><span class="op">!</span></code></h3><p>Types text character by character, triggering key events for each character.
+Use this instead of <code>fill!</code> when the page has special keyboard handling (e.g., WASM apps).</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">press</span><span class="lowerident">_</span><span class="lowerident">sequentially</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "#search"</span><span class="delimiter">,</span><span class="literal"> "hello"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section><section><h3 id="hover!" class="entry-name" ><a href="Playwright#hover!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">hover</span><span class="op">!</span></code></h3><p>Moves the mouse to the center of an element.</p>
+</section><section><h3 id="is_visible!" class="entry-name" ><a href="Playwright#is_visible!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="kw">is</span><span class="lowerident">_</span><span class="lowerident">visible</span><span class="op">!</span></code></h3><p>Returns <code>Bool.true</code> if the element is visible, <code>Bool.false</code> otherwise.</p>
+<pre><samp><span class="kw">is</span><span class="lowerident">_</span><span class="lowerident">shown</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="kw">is</span><span class="lowerident">_</span><span class="lowerident">visible</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "#modal"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Returns immediately without waiting. Returns <code>Bool.false</code> for non-existent elements.</p>
+</section><section><h3 id="wait_for_selector!" class="entry-name" ><a href="Playwright#wait_for_selector!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">wait</span><span class="lowerident">_</span><span class="lowerident">for</span><span class="lowerident">_</span><span class="lowerident">selector</span><span class="op">!</span></code></h3><p>Waits for an element matching the selector to appear and be visible.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">wait</span><span class="lowerident">_</span><span class="lowerident">for</span><span class="lowerident">_</span><span class="lowerident">selector</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "#loading-spinner"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Times out based on the browser's configured timeout.</p>
+</section><section><h3 id="query_count!" class="entry-name" ><a href="Playwright#query_count!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">query</span><span class="lowerident">_</span><span class="lowerident">count</span><span class="op">!</span></code></h3><p>Returns the number of elements matching a selector.</p>
+<pre><samp><span class="lowerident">count</span><span class="kw"> =</span><span class="upperident"> Playwright</span><span class="delimiter">.</span><span class="lowerident">query</span><span class="lowerident">_</span><span class="lowerident">count</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">page</span><span class="delimiter">,</span><span class="literal"> "ul.results li"</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+<p>Returns <code>0</code> if no elements match (does not fail).</p>
+</section><section><h3 id="mouse_move!" class="entry-name" ><a href="Playwright#mouse_move!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">mouse</span><span class="lowerident">_</span><span class="lowerident">move</span><span class="op">!</span></code></h3><p>Moves the mouse to the specified coordinates.</p>
+</section><section><h3 id="mouse_move_with_steps!" class="entry-name" ><a href="Playwright#mouse_move_with_steps!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">mouse</span><span class="lowerident">_</span><span class="lowerident">move</span><span class="lowerident">_</span><span class="lowerident">with</span><span class="lowerident">_</span><span class="lowerident">steps</span><span class="op">!</span></code></h3><p>Moves the mouse to the specified coordinates with interpolated steps.
+Use <code>steps</code> &gt; 1 for drag operations.</p>
+</section><section><h3 id="mouse_down!" class="entry-name" ><a href="Playwright#mouse_down!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">mouse</span><span class="lowerident">_</span><span class="lowerident">down</span><span class="op">!</span></code></h3><p>Presses the left mouse button at the current position.</p>
+</section><section><h3 id="mouse_up!" class="entry-name" ><a href="Playwright#mouse_up!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">mouse</span><span class="lowerident">_</span><span class="lowerident">up</span><span class="op">!</span></code></h3><p>Releases the left mouse button at the current position.</p>
+</section><section><h3 id="close!" class="entry-name" ><a href="Playwright#close!" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="currentColor"><!--!
+	Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License -
+	https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
+	Copyright 2023 Fonticons, Inc. -->
+	<path
+		d="M562.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L405.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C189.5 251.2 196 330 246 380c56.5 56.5 148 56.5 204.5 0L562.8 267.7zM43.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C57 372 57 321 88.5 289.5L200.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C416.5 260.8 410 182 360 132c-56.5-56.5-148-56.5-204.5 0L43.2 244.3z" />
+</svg></a><code><span class="lowerident">close</span><span class="op">!</span></code></h3><p>Closes the browser and terminates the driver process.</p>
+<pre><samp><span class="upperident">Playwright</span><span class="delimiter">.</span><span class="lowerident">close</span><span class="op">!</span><span class="delimiter">(</span><span class="lowerident">browser</span><span class="delimiter">)</span><span class="kw">?</span></samp></pre></code></pre>
+</section>
+        <footer>
+            <p>Made by people who like to make nice things.</p>
+        </footer>
+    </main>
+</body>
+
+</html>
