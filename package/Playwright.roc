@@ -9,11 +9,13 @@ module
         Page,
         BrowserType,
         Timeout,
+        BoundingBox,
         launch!,
         launch_with!,
         launch_page!,
         launch_page_with!,
         new_context!,
+        new_context_with!,
         new_page!,
         navigate!,
         navigate_with!,
@@ -23,25 +25,29 @@ module
         input_value!,
         get_attribute!,
         click!,
+        tap!,
         fill!,
         press_sequentially!,
         hover!,
         is_visible!,
         wait_for_selector!,
         query_count!,
+        bounding_box!,
         mouse_move!,
         mouse_move_with_steps!,
         mouse_down!,
         mouse_up!,
+        touchscreen_tap!,
+        touch_drag!,
+        evaluate!,
         close!,
     ]
 
 import json.Json
 import json.Option exposing [Option]
 
-## Protocol message types for JSON decoding
+# Protocol message types for JSON decoding
 
-## Response message from playwright driver
 ResponseMessage : {
     id : Option U64,
     guid : Option Str,
@@ -50,13 +56,26 @@ ResponseMessage : {
     error : Option ResponseError,
 }
 
-## Minimal type for checking message id
 IdCheckMessage : {
     id : Option U64,
 }
 
 ResponseResult : {
     response : Option ResponseRef,
+    value : Option SerializedStringValue,
+}
+
+SerializedStringValue : {
+    s : Str,
+}
+
+PlainStringResponseMessage : {
+    id : Option U64,
+    result : Option PlainStringResult,
+    error : Option ResponseError,
+}
+
+PlainStringResult : {
     value : Option Str,
 }
 
@@ -92,7 +111,6 @@ ErrorDetails : {
     message : Str,
 }
 
-## __create__ message for object creation events
 CreateMessage : {
     guid : Str,
     method : Str,
@@ -104,7 +122,6 @@ CreateParams : {
     guid : Str,
 }
 
-## __create__ message for BrowserType objects (includes initializer with name)
 BrowserTypeCreateMessage : {
     method : Option Str,
     params : Option BrowserTypeCreateParams,
@@ -120,7 +137,7 @@ BrowserTypeInitializer : {
     name : Option Str,
 }
 
-## Protocol messages for encoding (sending to driver)
+# Protocol messages for encoding (sending to driver)
 
 InitializeMessage : {
     id : U64,
@@ -290,6 +307,97 @@ MouseButtonParams : {
     clickCount : U64,
 }
 
+TouchTapMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : TouchTapParams,
+    metadata : {},
+}
+
+TouchTapParams : {
+    x : F64,
+    y : F64,
+}
+
+EvaluateMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : EvaluateParams,
+    metadata : {},
+}
+
+EvaluateParams : {
+    expression : Str,
+    isFunction : Bool,
+    arg : EvaluateArg,
+}
+
+EvaluateArg : {
+    value : SerializedUndefined,
+    handles : List {},
+}
+
+SerializedUndefined : {
+    v : Str,
+}
+
+NewContextMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : NewContextParams,
+    metadata : {},
+}
+
+NewContextParams : {
+    hasTouch : Bool,
+}
+
+ElementSimpleMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : {},
+    metadata : {},
+}
+
+ElementHandleResponseMessage : {
+    id : Option U64,
+    result : Option ElementHandleResult,
+    error : Option ResponseError,
+}
+
+ElementHandleResult : {
+    element : Option ResponseRef,
+}
+
+## Bounding box of an element in CSS pixels, relative to the main frame viewport.
+BoundingBox : {
+    x : F64,
+    y : F64,
+    width : F64,
+    height : F64,
+}
+
+BoundingBoxResponseMessage : {
+    id : Option U64,
+    result : Option BoundingBoxResult,
+    error : Option ResponseError,
+}
+
+BoundingBoxResult : {
+    value : Option BoundingBoxValue,
+}
+
+BoundingBoxValue : {
+    x : F64,
+    y : F64,
+    width : F64,
+    height : F64,
+}
+
 ## Which browser engine to use.
 BrowserType : [Chromium, Firefox, WebKit]
 
@@ -315,6 +423,7 @@ Browser : {
 Context : {
     browser : Browser,
     context_guid : Str,
+    has_touch : Bool,
 }
 
 ## A page (browser tab) where automation happens.
@@ -349,7 +458,6 @@ WaitUntil : [
 msg_id : U64
 msg_id = 1000
 
-## Encode a U32 as 4 little-endian bytes
 encode_u32_le : U32 -> List U8
 encode_u32_le = |n| [
     Num.to_u8(Num.bitwise_and(n, 0xFF)),
@@ -358,7 +466,6 @@ encode_u32_le = |n| [
     Num.to_u8(Num.bitwise_and(Num.shift_right_by(n, 24), 0xFF)),
 ]
 
-## Decode 4 little-endian bytes to a U32
 decode_u32_le : List U8 -> U32
 decode_u32_le = |bytes|
     b0 = List.get(bytes, 0) |> Result.with_default(0) |> Num.to_u32
@@ -370,7 +477,6 @@ decode_u32_le = |bytes|
         Num.bitwise_or(Num.shift_left_by(b2, 16), Num.shift_left_by(b3, 24)),
     )
 
-## Send a message using the length-prefixed protocol
 send_message! = |write_stdin!, message_bytes|
     length = List.len(message_bytes) |> Num.to_u32
     length_bytes = encode_u32_le(length)
@@ -381,7 +487,6 @@ send_message! = |write_stdin!, message_bytes|
     # Send message
     write_stdin!(message_bytes)
 
-## Receive message bytes using the length-prefixed protocol
 receive_message_bytes! = |read_stdout!|
     # Read 4-byte length prefix
     length_bytes = read_stdout!(4)?
@@ -390,57 +495,68 @@ receive_message_bytes! = |read_stdout!|
     # Read message body
     read_stdout!(length)
 
-## Decode a __create__ message to extract type and guid
 decode_create_message : List U8 -> Result CreateMessage [DecodeError]
 decode_create_message = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Decode a response message
 decode_response_message : List U8 -> Result ResponseMessage [DecodeError]
 decode_response_message = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Decode a boolean response message
 decode_bool_response : List U8 -> Result BoolResponseMessage [DecodeError]
 decode_bool_response = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Decode an integer response message
 decode_int_response : List U8 -> Result IntResponseMessage [DecodeError]
 decode_int_response = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Decode just the message id (ignores other fields)
+decode_plain_string_response : List U8 -> Result PlainStringResponseMessage [DecodeError]
+decode_plain_string_response = |bytes|
+    Decode.from_bytes(bytes, Json.utf8)
+    |> Result.map_err(|_| DecodeError)
+
 decode_id_check : List U8 -> Result IdCheckMessage [DecodeError]
 decode_id_check = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Decode a BrowserType __create__ message
 decode_browser_type_create : List U8 -> Result BrowserTypeCreateMessage [DecodeError]
 decode_browser_type_create = |bytes|
     Decode.from_bytes(bytes, Json.utf8)
     |> Result.map_err(|_| DecodeError)
 
-## Launches a browser and returns a handle to it.
+decode_bounding_box_response : List U8 -> Result BoundingBoxResponseMessage [DecodeError]
+decode_bounding_box_response = |bytes|
+    Decode.from_bytes(bytes, Json.utf8)
+    |> Result.map_err(|_| DecodeError)
+
+decode_element_handle_response : List U8 -> Result ElementHandleResponseMessage [DecodeError]
+decode_element_handle_response = |bytes|
+    Decode.from_bytes(bytes, Json.utf8)
+    |> Result.map_err(|_| DecodeError)
+
+## Launch a browser with default settings (headless, 30s timeout).
 ##
 ## ```
 ## browser = Playwright.launch!(Chromium)?
 ## ```
-##
-## Runs headless with a 30 second timeout. Use [launch_with!] for more control.
 launch! : BrowserType => Result Browser _
 launch! = |browser_type|
     launch_with!({ browser_type, headless: Bool.true, timeout: TimeoutMilliseconds(30000) })
 
-## Launches a browser with custom options.
+## Launch a browser with custom options.
 ##
 ## ```
-## browser = Playwright.launch_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(60000) })?
+## browser = Playwright.launch_with!({
+##     browser_type: Chromium,
+##     headless: Bool.false,
+##     timeout: TimeoutMilliseconds(60000),
+## })?
 ## ```
 launch_with! : { browser_type : BrowserType, headless : Bool, timeout : Timeout } => Result Browser _
 launch_with! = |{ browser_type, headless, timeout }|
@@ -475,7 +591,6 @@ launch_with! = |{ browser_type, headless, timeout }|
             when child.kill!({}) is
                 _ -> Err(err)
 
-## Performs browser initialization. Separated so launch_with! can handle cleanup.
 initialize_browser! = |child, browser_type, headless, timeout|
     # Wrappers for initialization (their error types will be unified with other errors)
     init_write = |bytes| child.write_stdin!(bytes) |> Result.map_err(|_| WriteFailed)
@@ -510,21 +625,45 @@ initialize_browser! = |child, browser_type, headless, timeout|
         timeout,
     })
 
-## Launches a browser with a ready-to-use page.
+## Launch a browser and create a page in one step.
+##
+## ```
+## { browser, page } = Playwright.launch_page!(Chromium)?
+## ```
 launch_page! = |browser_type|
     launch_page_with!({ browser_type, headless: Bool.true, timeout: TimeoutMilliseconds(30000) })
 
-## Launches a browser with custom options and a ready-to-use page.
+## Launch a browser with custom options and create a page.
+##
+## ```
+## { browser, page } = Playwright.launch_page_with!({
+##     browser_type: Chromium,
+##     headless: Bool.false,
+##     timeout: TimeoutMilliseconds(5000),
+## })?
+## ```
 launch_page_with! = |options|
     browser = launch_with!(options)?
     context = new_context!(browser)?
     page = new_page!(context)?
     Ok({ browser, page })
 
-## Creates a new browser context with isolated session state.
+## Create a new browser context with isolated session state.
+##
+## ```
+## context = Playwright.new_context!(browser)?
+## ```
 new_context! = |browser|
-    context_msg : SimpleMessage
-    context_msg = { id: msg_id, guid: browser.browser_guid, method: "newContext", params: {}, metadata: {} }
+    new_context_with!(browser, { has_touch: Bool.false })
+
+## Create a new browser context with options.
+##
+## ```
+## context = Playwright.new_context_with!(browser, { has_touch: Bool.true })?
+## ```
+new_context_with! = |browser, options|
+    context_msg : NewContextMessage
+    context_msg = { id: msg_id, guid: browser.browser_guid, method: "newContext", params: { hasTouch: options.has_touch }, metadata: {} }
     send_message!(browser.write_stdin!, Encode.to_bytes(context_msg, Json.utf8))?
 
     context_guid = read_until_context_guid!(browser.read_stdout!)?
@@ -535,9 +674,13 @@ new_context! = |browser|
             Err(NewContextError(err.error.message))
 
         None ->
-            Ok({ browser, context_guid })
+            Ok({ browser, context_guid, has_touch: options.has_touch })
 
-## Creates a new page in the browser context.
+## Create a new page (tab) in the browser context.
+##
+## ```
+## page = Playwright.new_page!(context)?
+## ```
 new_page! = |context|
     browser = context.browser
     page_msg : SimpleMessage
@@ -561,7 +704,6 @@ browser_type_to_name = |browser_type|
         Firefox -> "firefox"
         WebKit -> "webkit"
 
-## Read initialization messages until we get id:1 response, capturing browser type GUID along the way
 read_init_and_find_browser_type! = |read_stdout!, browser_type_name|
     read_init_loop!(read_stdout!, browser_type_name, "")
 
@@ -589,7 +731,6 @@ read_init_loop! = |read_stdout!, browser_type_name, found_guid|
             new_guid = extract_browser_type_guid(bytes, browser_type_name, found_guid)
             read_init_loop!(read_stdout!, browser_type_name, new_guid)
 
-## Extract browser type GUID from a __create__ message if it matches the requested browser type
 extract_browser_type_guid : List U8, Str, Str -> Str
 extract_browser_type_guid = |bytes, browser_type_name, default|
     when decode_browser_type_create(bytes) is
@@ -614,7 +755,6 @@ extract_browser_type_guid = |bytes, browser_type_name, default|
 
         Err(_) -> default
 
-## Read messages until we find browser GUID
 read_until_browser_guid! = |read_stdout!|
     bytes = receive_message_bytes!(read_stdout!)?
 
@@ -629,7 +769,6 @@ read_until_browser_guid! = |read_stdout!|
             # Not a create message, keep reading
             read_until_browser_guid!(read_stdout!)
 
-## Read messages until we find context GUID
 read_until_context_guid! = |read_stdout!|
     bytes = receive_message_bytes!(read_stdout!)?
 
@@ -644,7 +783,6 @@ read_until_context_guid! = |read_stdout!|
             # Not a create message, keep reading
             read_until_context_guid!(read_stdout!)
 
-## Read messages until we find both page GUID and frame GUID
 read_until_page_and_frame! = |read_stdout!|
     read_page_frame_loop!(read_stdout!, "", "")
 
@@ -675,7 +813,7 @@ read_page_frame_loop! = |read_stdout!, found_page, found_frame|
                 # Not a create message, keep reading
                 read_page_frame_loop!(read_stdout!, found_page, found_frame)
 
-## Navigates to a URL.
+## Navigate to a URL.
 ##
 ## ```
 ## Playwright.navigate!(page, "https://example.com")?
@@ -697,10 +835,10 @@ navigate! = |page, url|
         None ->
             Ok({})
 
-## Navigates to a URL with options.
+## Navigate to a URL with options.
 ##
 ## ```
-## Playwright.navigate_with!(page, { url: "https://example.com", wait_until: DomContentLoaded })?
+## Playwright.navigate_with!(page, { url: "https://example.com", wait_until: NetworkIdle })?
 ## ```
 navigate_with! = |page, { url, wait_until }|
     context = page.context
@@ -727,7 +865,7 @@ wait_until_to_str = |wait_until|
         NetworkIdle -> "networkidle"
         Commit -> "commit"
 
-## Returns the page title.
+## Get the page title.
 ##
 ## ```
 ## title = Playwright.get_title!(page)?
@@ -739,7 +877,7 @@ get_title! = |page|
     title_msg = { id: msg_id, guid: page.frame_guid, method: "title", params: {}, metadata: {} }
     send_message!(browser.write_stdin!, Encode.to_bytes(title_msg, Json.utf8))?
 
-    response = read_until_response!(browser.read_stdout!, msg_id)?
+    response = read_until_plain_string_response!(browser.read_stdout!, msg_id)?
 
     when Option.get(response.error) is
         Some(err) ->
@@ -755,13 +893,11 @@ get_title! = |page|
                 None ->
                     Err(TitleNotFound)
 
-## Returns the text content of an element.
+## Get the text content of an element.
 ##
 ## ```
 ## text = Playwright.text_content!(page, "h1")?
 ## ```
-##
-## Fails if the element has no text content (is empty).
 text_content! = |page, selector|
     context = page.context
     browser = context.browser
@@ -773,7 +909,7 @@ text_content! = |page, selector|
         Ok(value) -> Ok(value)
         Err(ValueIsNull) -> Err(TextContentNotFound)
 
-## Returns the value of an input or textarea element.
+## Get the value of an input or textarea.
 ##
 ## ```
 ## value = Playwright.input_value!(page, "#email")?
@@ -785,7 +921,7 @@ input_value! = |page, selector|
     msg = { id: msg_id, guid: page.frame_guid, method: "inputValue", params: { selector, timeout: timeout_to_ms(browser.timeout) }, metadata: {} }
     send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
 
-    response = read_until_response!(browser.read_stdout!, msg_id)?
+    response = read_until_plain_string_response!(browser.read_stdout!, msg_id)?
 
     when Option.get(response.error) is
         Some(err) ->
@@ -801,13 +937,11 @@ input_value! = |page, selector|
                 None ->
                     Err(InputValueNotFound)
 
-## Returns an attribute value from an element.
+## Get an attribute value from an element.
 ##
 ## ```
 ## href = Playwright.get_attribute!(page, "a.nav-link", "href")?
 ## ```
-##
-## Fails if the attribute doesn't exist on the element.
 get_attribute! = |page, selector, attribute_name|
     context = page.context
     browser = context.browser
@@ -819,7 +953,7 @@ get_attribute! = |page, selector, attribute_name|
         Ok(value) -> Ok(value)
         Err(ValueIsNull) -> Err(AttributeNotFound)
 
-## Clicks an element.
+## Click an element.
 ##
 ## ```
 ## Playwright.click!(page, "button#submit")?
@@ -840,17 +974,13 @@ click! = |page, selector|
         None ->
             Ok({})
 
-## Fills an input or textarea with text.
+## Fill an input or textarea with text.
 ##
 ## ```
 ## Playwright.fill!(page, "#email", "user@example.com")?
 ## ```
 ##
-## Replaces any existing content. This is the fastest way to enter text.
-##
-## > **Note:** For WASM apps that rely on keyboard events, use `press_sequentially!`
-## > instead. `fill!` sets the value programmatically and dispatches a synthetic
-## > `input` event, which some frameworks don't handle.
+## > For WASM apps that rely on keyboard events, use [press_sequentially!] instead.
 fill! = |page, selector, value|
     context = page.context
     browser = context.browser
@@ -867,10 +997,9 @@ fill! = |page, selector, value|
         None ->
             Ok({})
 
-## Types text character by character, triggering key events for each character.
-## Use this instead of `fill!` when the page has special keyboard handling (e.g., WASM apps).
+## Type text character by character, triggering key events.
 ##
-## ```roc
+## ```
 ## Playwright.press_sequentially!(page, "#search", "hello")?
 ## ```
 press_sequentially! = |page, selector, text|
@@ -889,7 +1018,11 @@ press_sequentially! = |page, selector, text|
         None ->
             Ok({})
 
-## Moves the mouse to the center of an element.
+## Move the mouse to the center of an element.
+##
+## ```
+## Playwright.hover!(page, ".dropdown-trigger")?
+## ```
 hover! = |page, selector|
     context = page.context
     browser = context.browser
@@ -906,13 +1039,11 @@ hover! = |page, selector|
         None ->
             Ok({})
 
-## Returns `Bool.true` if the element is visible, `Bool.false` otherwise.
+## Check if an element is visible. Returns immediately without waiting.
 ##
 ## ```
 ## is_shown = Playwright.is_visible!(page, "#modal")?
 ## ```
-##
-## Returns immediately without waiting. Returns `Bool.false` for non-existent elements.
 is_visible! = |page, selector|
     context = page.context
     browser = context.browser
@@ -932,13 +1063,11 @@ is_visible! = |page, selector|
                 Some(result) -> Ok(result.value)
                 None -> Err(IsVisibleNoResult)
 
-## Waits for an element matching the selector to appear and be visible.
+## Wait for an element to appear and be visible.
 ##
 ## ```
-## Playwright.wait_for_selector!(page, "#loading-spinner")?
+## Playwright.wait_for_selector!(page, "#dynamic-content")?
 ## ```
-##
-## Times out based on the browser's configured timeout.
 wait_for_selector! = |page, selector|
     context = page.context
     browser = context.browser
@@ -956,20 +1085,25 @@ wait_for_selector! = |page, selector|
         None ->
             Ok({})
 
-## Read messages until we find a boolean response with the expected id
-##
-## TODO(roc-0.1): The read_until_*_response! functions share a pattern but differ in
-## decoder and result handling. Consider consolidating with a higher-order function
-## once Roc's support for effectful HOFs is more ergonomic.
+# Response readers: read messages until we find one with the expected id.
+# Nullable responses (element_handle, bounding_box, nullable_string) check raw JSON
+# for the expected field before decoding because roc-json can't decode empty objects {}.
+
 read_until_bool_response! = |read_stdout!, expected_id|
     bytes = receive_message_bytes!(read_stdout!)?
 
-    when decode_bool_response(bytes) is
-        Ok(msg) ->
-            when Option.get(msg.id) is
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
                 Some(id) ->
                     if id == expected_id then
-                        Ok(msg)
+                        # This is our response - bool responses always have a value
+                        when decode_bool_response(bytes) is
+                            Ok(msg) -> Ok(msg)
+                            Err(_) ->
+                                # Bool responses should never fail to decode - this is a bug
+                                raw = Str.from_utf8(bytes) |> Result.with_default("<invalid utf8>")
+                                Err(UnexpectedBoolResponse(raw))
                     else
                         read_until_bool_response!(read_stdout!, expected_id)
 
@@ -979,13 +1113,11 @@ read_until_bool_response! = |read_stdout!, expected_id|
         Err(_) ->
             read_until_bool_response!(read_stdout!, expected_id)
 
-## Returns the number of elements matching a selector.
+## Count elements matching a selector. Returns `0` if none match.
 ##
 ## ```
 ## count = Playwright.query_count!(page, "ul.results li")?
 ## ```
-##
-## Returns `0` if no elements match (does not fail).
 query_count! = |page, selector|
     context = page.context
     browser = context.browser
@@ -1004,16 +1136,21 @@ query_count! = |page, selector|
                 Some(result) -> Ok(result.value)
                 None -> Err(QueryCountNoResult)
 
-## Read messages until we find an integer response with the expected id
 read_until_int_response! = |read_stdout!, expected_id|
     bytes = receive_message_bytes!(read_stdout!)?
 
-    when decode_int_response(bytes) is
-        Ok(msg) ->
-            when Option.get(msg.id) is
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
                 Some(id) ->
                     if id == expected_id then
-                        Ok(msg)
+                        # This is our response - int responses always have a value
+                        when decode_int_response(bytes) is
+                            Ok(msg) -> Ok(msg)
+                            Err(_) ->
+                                # Int responses should never fail to decode - this is a bug
+                                raw = Str.from_utf8(bytes) |> Result.with_default("<invalid utf8>")
+                                Err(UnexpectedIntResponse(raw))
                     else
                         read_until_int_response!(read_stdout!, expected_id)
 
@@ -1023,7 +1160,28 @@ read_until_int_response! = |read_stdout!, expected_id|
         Err(_) ->
             read_until_int_response!(read_stdout!, expected_id)
 
-## Read messages until we find a response with the expected id
+read_until_plain_string_response! = |read_stdout!, expected_id|
+    bytes = receive_message_bytes!(read_stdout!)?
+
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
+                Some(id) ->
+                    if id == expected_id then
+                        when decode_plain_string_response(bytes) is
+                            Ok(msg) -> Ok(msg)
+                            Err(_) ->
+                                raw = Str.from_utf8(bytes) |> Result.with_default("<invalid utf8>")
+                                Err(UnexpectedStringResponse(raw))
+                    else
+                        read_until_plain_string_response!(read_stdout!, expected_id)
+
+                None ->
+                    read_until_plain_string_response!(read_stdout!, expected_id)
+
+        Err(_) ->
+            read_until_plain_string_response!(read_stdout!, expected_id)
+
 read_until_response! = |read_stdout!, expected_id|
     bytes = receive_message_bytes!(read_stdout!)?
 
@@ -1058,11 +1216,6 @@ read_until_response! = |read_stdout!, expected_id|
             # Decode failed (probably an event), keep reading
             read_until_response!(read_stdout!, expected_id)
 
-## Read a string response, handling Playwright's {"result": {}} for null values.
-##
-## Workaround: Playwright returns {"result": {}} when a value is null (e.g.,
-## getAttribute on missing attribute, textContent on empty element), but roc-json
-## (as of 0.12.0) cannot decode empty JSON objects {}.
 read_until_nullable_string_response! = |read_stdout!, expected_id|
     bytes = receive_message_bytes!(read_stdout!)?
 
@@ -1076,19 +1229,38 @@ read_until_nullable_string_response! = |read_stdout!, expected_id|
                         # We check the raw string because roc-json can't decode empty objects {}
                         msg_str = Str.from_utf8(bytes) |> Result.with_default("")
                         if Str.contains(msg_str, "\"value\"") then
-                            # Has a value field - decode it
-                            when decode_response_message(bytes) is
-                                Ok(response) ->
-                                    when Option.get(response.error) is
-                                        Some(err) -> Err(PlaywrightError(err.error.message))
-                                        None ->
-                                            when Option.get(response.result) is
-                                                Some(result) ->
-                                                    when Option.get(result.value) is
-                                                        Some(value) -> Ok(Ok(value))
-                                                        None -> Ok(Err(ValueIsNull))
-                                                None -> Ok(Err(ValueIsNull))
-                                Err(_) -> Err(DecodeError)
+                            # Has a value field - check format and decode accordingly
+                            if Str.contains(msg_str, "\"s\":") then
+                                # Serialized string format: {"value": {"s": "text"}}
+                                when decode_response_message(bytes) is
+                                    Ok(response) ->
+                                        when Option.get(response.error) is
+                                            Some(err) -> Err(PlaywrightError(err.error.message))
+                                            None ->
+                                                when Option.get(response.result) is
+                                                    Some(result) ->
+                                                        when Option.get(result.value) is
+                                                            Some(serialized) -> Ok(Ok(serialized.s))
+                                                            None -> Ok(Err(ValueIsNull))
+                                                    None -> Ok(Err(ValueIsNull))
+                                    Err(_) -> Err(DecodeError)
+                            else if Str.contains(msg_str, "\"v\":") then
+                                # Serialized null/undefined: {"value": {"v": "null"}} or {"v": "undefined"}
+                                Ok(Err(ValueIsNull))
+                            else
+                                # Plain string format: {"value": "text"}
+                                when decode_plain_string_response(bytes) is
+                                    Ok(response) ->
+                                        when Option.get(response.error) is
+                                            Some(err) -> Err(PlaywrightError(err.error.message))
+                                            None ->
+                                                when Option.get(response.result) is
+                                                    Some(result) ->
+                                                        when Option.get(result.value) is
+                                                            Some(value) -> Ok(Ok(value))
+                                                            None -> Ok(Err(ValueIsNull))
+                                                    None -> Ok(Err(ValueIsNull))
+                                    Err(_) -> Err(DecodeError)
                         else
                             # No value field - it's null
                             Ok(Err(ValueIsNull))
@@ -1104,12 +1276,19 @@ read_until_nullable_string_response! = |read_stdout!, expected_id|
             # Decode failed (probably an event), keep reading
             read_until_nullable_string_response!(read_stdout!, expected_id)
 
-## Moves the mouse to the specified coordinates.
+## Move the mouse to coordinates.
+##
+## ```
+## Playwright.mouse_move!(page, 100.0, 200.0)?
+## ```
 mouse_move! = |page, x, y|
     mouse_move_with_steps!(page, x, y, 1)
 
-## Moves the mouse to the specified coordinates with interpolated steps.
-## Use `steps` > 1 for drag operations.
+## Move the mouse to coordinates with interpolated steps.
+##
+## ```
+## Playwright.mouse_move_with_steps!(page, 100.0, 200.0, 10)?
+## ```
 mouse_move_with_steps! = |page, x, y, steps|
     context = page.context
     browser = context.browser
@@ -1126,7 +1305,11 @@ mouse_move_with_steps! = |page, x, y, steps|
         None ->
             Ok({})
 
-## Presses the left mouse button at the current position.
+## Press the left mouse button at current position.
+##
+## ```
+## Playwright.mouse_down!(page)?
+## ```
 mouse_down! = |page|
     context = page.context
     browser = context.browser
@@ -1143,7 +1326,11 @@ mouse_down! = |page|
         None ->
             Ok({})
 
-## Releases the left mouse button at the current position.
+## Release the left mouse button at current position.
+##
+## ```
+## Playwright.mouse_up!(page)?
+## ```
 mouse_up! = |page|
     context = page.context
     browser = context.browser
@@ -1160,7 +1347,285 @@ mouse_up! = |page|
         None ->
             Ok({})
 
-## Closes the browser and terminates the driver process.
+## Get the bounding box of an element. Waits for the element to be visible.
+##
+## ```
+## box = Playwright.bounding_box!(page, ".swiper")?
+## center_x = box.x + box.width / 2.0
+## center_y = box.y + box.height / 2.0
+## ```
+bounding_box! = |page, selector|
+    context = page.context
+    browser = context.browser
+
+    # Wait for element to be visible first (matches Playwright's auto-wait behavior)
+    wait_for_selector!(page, selector)?
+
+    # Query for the element to get its element handle guid
+    query_msg : SelectorOnlyMessage
+    query_msg = { id: msg_id, guid: page.frame_guid, method: "querySelector", params: { selector }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(query_msg, Json.utf8))?
+
+    element_response = read_until_element_handle_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(element_response.error) is
+        Some(err) ->
+            Err(BoundingBoxError(err.error.message))
+
+        None ->
+            when Option.get(element_response.result) is
+                Some(result) ->
+                    when Option.get(result.element) is
+                        Some(element_ref) ->
+                            # Step 2: Call boundingBox on the element handle
+                            box_msg : ElementSimpleMessage
+                            box_msg = { id: msg_id, guid: element_ref.guid, method: "boundingBox", params: {}, metadata: {} }
+                            send_message!(browser.write_stdin!, Encode.to_bytes(box_msg, Json.utf8))?
+
+                            box_response = read_until_bounding_box_response!(browser.read_stdout!, msg_id)?
+
+                            when Option.get(box_response.error) is
+                                Some(box_err) ->
+                                    Err(BoundingBoxError(box_err.error.message))
+
+                                None ->
+                                    when Option.get(box_response.result) is
+                                        Some(box_result) ->
+                                            when Option.get(box_result.value) is
+                                                Some(box) -> Ok({ x: box.x, y: box.y, width: box.width, height: box.height })
+                                                None -> Err(ElementNotVisible)
+
+                                        None -> Err(ElementNotVisible)
+
+                        None -> Err(ElementNotFound)
+
+                None -> Err(ElementNotFound)
+
+read_until_element_handle_response! = |read_stdout!, expected_id|
+    bytes = receive_message_bytes!(read_stdout!)?
+
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
+                Some(id) ->
+                    if id == expected_id then
+                        # This is our response - check if it has an element field
+                        msg_str = Str.from_utf8(bytes) |> Result.with_default("")
+                        if Str.contains(msg_str, "\"element\"") then
+                            # Has an element field - decode it
+                            when decode_element_handle_response(bytes) is
+                                Ok(msg) -> Ok(msg)
+                                Err(_) ->
+                                    # Decode failed unexpectedly - return element not found
+                                    Ok({
+                                        id: Option.some(id),
+                                        result: Option.some({ element: Option.none({}) }),
+                                        error: Option.none({}),
+                                    })
+                        else
+                            # No element field - Playwright returned {"result": {}}
+                            # This means querySelector found no matching element
+                            Ok({
+                                id: Option.some(id),
+                                result: Option.some({ element: Option.none({}) }),
+                                error: Option.none({}),
+                            })
+                    else
+                        read_until_element_handle_response!(read_stdout!, expected_id)
+
+                None ->
+                    # No id field (probably an event), keep reading
+                    read_until_element_handle_response!(read_stdout!, expected_id)
+
+        Err(_) ->
+            # Decode failed (probably an event), keep reading
+            read_until_element_handle_response!(read_stdout!, expected_id)
+
+read_until_bounding_box_response! = |read_stdout!, expected_id|
+    bytes = receive_message_bytes!(read_stdout!)?
+
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
+                Some(id) ->
+                    if id == expected_id then
+                        # This is our response - check if it has a value field
+                        msg_str = Str.from_utf8(bytes) |> Result.with_default("")
+                        if Str.contains(msg_str, "\"value\"") then
+                            # Has a value field - decode it
+                            when decode_bounding_box_response(bytes) is
+                                Ok(msg) -> Ok(msg)
+                                Err(_) ->
+                                    # Decode failed unexpectedly - return no bounding box
+                                    Ok({
+                                        id: Option.some(id),
+                                        result: Option.some({ value: Option.none({}) }),
+                                        error: Option.none({}),
+                                    })
+                        else
+                            # No value field - Playwright returned {"result": {}}
+                            # This means the element has no bounding box (not visible)
+                            Ok({
+                                id: Option.some(id),
+                                result: Option.some({ value: Option.none({}) }),
+                                error: Option.none({}),
+                            })
+                    else
+                        read_until_bounding_box_response!(read_stdout!, expected_id)
+
+                None ->
+                    # No id field (probably an event), keep reading
+                    read_until_bounding_box_response!(read_stdout!, expected_id)
+
+        Err(_) ->
+            # Decode failed (probably an event), keep reading
+            read_until_bounding_box_response!(read_stdout!, expected_id)
+
+## Tap an element. Requires `has_touch: Bool.true` context.
+##
+## ```
+## Playwright.tap!(page, "button#submit")?
+## ```
+tap! = |page, selector|
+    context = page.context
+    browser = context.browser
+    msg : SelectorMessage
+    msg = { id: msg_id, guid: page.frame_guid, method: "tap", params: { selector, timeout: timeout_to_ms(browser.timeout) }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(TapError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Tap at coordinates. Requires `has_touch: Bool.true` context.
+##
+## ```
+## Playwright.touchscreen_tap!(page, 100.0, 200.0)?
+## ```
+touchscreen_tap! = |page, x, y|
+    context = page.context
+    browser = context.browser
+    msg : TouchTapMessage
+    msg = { id: msg_id, guid: page.page_guid, method: "touchscreenTap", params: { x, y }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(TouchscreenTapError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Execute JavaScript and return the string result.
+##
+## ```
+## title = Playwright.evaluate!(page, "document.title")?
+## ```
+##
+## Only string results are supported. Convert other types in JS:
+##
+## ```
+## count = Playwright.evaluate!(page, "String(document.querySelectorAll('li').length)")?
+## ```
+evaluate! = |page, expression|
+    context = page.context
+    browser = context.browser
+    msg : EvaluateMessage
+    msg = {
+        id: msg_id,
+        guid: page.frame_guid,
+        method: "evaluateExpression",
+        params: {
+            expression,
+            isFunction: Bool.false,
+            arg: { value: { v: "undefined" }, handles: [] },
+        },
+        metadata: {},
+    }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    when read_until_nullable_string_response!(browser.read_stdout!, msg_id)? is
+        Ok(value) -> Ok(value)
+        Err(ValueIsNull) -> Err(EvaluateReturnedNull)
+
+## Drag from one point to another. Requires `has_touch: Bool.true` context.
+##
+## ```
+## Playwright.touch_drag!(page, { start_x: 100.0, start_y: 200.0, end_x: 300.0, end_y: 200.0 })?
+## ```
+touch_drag! = |page, { start_x, start_y, end_x, end_y }|
+    # Use JavaScript to dispatch synthetic touch events
+    # This is the standard approach for touch drag gestures in Playwright
+    js =
+        """
+        (() => {
+            const startX = $(Num.to_str(start_x));
+            const startY = $(Num.to_str(start_y));
+            const endX = $(Num.to_str(end_x));
+            const endY = $(Num.to_str(end_y));
+
+            const el = document.elementFromPoint(startX, startY);
+            if (!el) return 'no element';
+
+            let touchId = 1;
+
+            function dispatchTouchEvent(type, x, y, hasTouches) {
+                const touch = new Touch({
+                    identifier: touchId,
+                    target: el,
+                    clientX: x,
+                    clientY: y,
+                    pageX: x,
+                    pageY: y,
+                    screenX: x,
+                    screenY: y,
+                });
+
+                const evt = new TouchEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    touches: hasTouches ? [touch] : [],
+                    targetTouches: hasTouches ? [touch] : [],
+                    changedTouches: [touch],
+                });
+
+                el.dispatchEvent(evt);
+            }
+
+            dispatchTouchEvent('touchstart', startX, startY, true);
+
+            // Intermediate move events
+            const steps = 5;
+            for (let i = 1; i <= steps; i++) {
+                const x = startX + (endX - startX) * (i / steps);
+                const y = startY + (endY - startY) * (i / steps);
+                dispatchTouchEvent('touchmove', x, y, true);
+            }
+
+            dispatchTouchEvent('touchend', endX, endY, false);
+
+            return 'done';
+        })()
+        """
+    when evaluate!(page, js) is
+        Ok(_result) -> Ok({})
+        Err(PlaywrightError(msg)) -> Err(TouchDragError(msg))
+        Err(EvaluateReturnedNull) -> Err(TouchDragError("No element at coordinates"))
+        Err(_) -> Err(TouchDragError("Unknown error"))
+
+kill_process! = |kill!|
+    kill!({})
+    |> Result.map_err(|_| CloseFailed)
+
+## Close the browser and terminate the driver process.
 ##
 ## ```
 ## Playwright.close!(browser)?
@@ -1168,5 +1633,4 @@ mouse_up! = |page|
 close! = |browser|
     # Kill the driver process, which terminates the browser.
     # No need to send a close message first - the driver is designed to be terminated.
-    browser.kill!({})
-    |> Result.map_err(|_| CloseFailed)
+    kill_process!(browser.kill!)

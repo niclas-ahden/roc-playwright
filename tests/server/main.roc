@@ -22,6 +22,8 @@ respond! = |request, _model|
         "/no-title" -> Ok(html(no_title_page))
         "/delayed-element" -> Ok(html(delayed_element_page))
         "/never-appears" -> Ok(html(never_appears_page))
+        "/bounding-box-test" -> Ok(html(bounding_box_test_page))
+        "/touch-test" -> Ok(html(touch_test_page))
         _ -> Ok(not_found)
 
 html : Str -> Response
@@ -238,6 +240,139 @@ never_appears_page =
     <body>
         <h1>Never Appears Test</h1>
         <p>The element #never will never be added to this page.</p>
+    </body>
+    </html>
+    """
+
+bounding_box_test_page : Str
+bounding_box_test_page =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Bounding Box Test</title>
+        <style>
+            #fixed-box {
+                position: absolute;
+                top: 100px;
+                left: 150px;
+                width: 200px;
+                height: 100px;
+                background: #4CAF50;
+            }
+            #nested-box {
+                width: 50px;
+                height: 25px;
+                background: #2196F3;
+                margin: 10px;
+            }
+            #zero-size {
+                width: 0;
+                height: 0;
+            }
+            #hidden-display {
+                display: none;
+                width: 100px;
+                height: 50px;
+            }
+            #hidden-visibility {
+                visibility: hidden;
+                width: 100px;
+                height: 50px;
+            }
+            #offscreen {
+                position: absolute;
+                top: -1000px;
+                left: -1000px;
+                width: 100px;
+                height: 50px;
+                background: #FF5722;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Bounding Box Test</h1>
+        <div id="fixed-box">
+            <div id="nested-box">Nested</div>
+        </div>
+        <button id="regular-button" style="margin-top: 250px;">A Button</button>
+        <!-- Edge case elements -->
+        <div id="zero-size"></div>
+        <div id="hidden-display">Hidden with display:none</div>
+        <div id="hidden-visibility">Hidden with visibility:hidden</div>
+        <div id="offscreen">Offscreen element</div>
+    </body>
+    </html>
+    """
+
+touch_test_page : Str
+touch_test_page =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Touch Test</title>
+        <style>
+            #touch-area {
+                width: 300px;
+                height: 200px;
+                background: #f0f0f0;
+                border: 2px solid #333;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                user-select: none;
+            }
+            #tap-button {
+                margin-top: 20px;
+                padding: 20px 40px;
+                font-size: 18px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Touch Test</h1>
+        <div id="touch-area">Touch area</div>
+        <p id="touch-result">No touch yet</p>
+        <button id="tap-button">Tap Me</button>
+        <p id="tap-result">Not tapped yet</p>
+        <script>
+            var touchArea = document.getElementById('touch-area');
+            var touchResult = document.getElementById('touch-result');
+            var tapButton = document.getElementById('tap-button');
+            var tapResult = document.getElementById('tap-result');
+
+            var dragEvents = [];
+
+            touchArea.addEventListener('touchstart', function(e) {
+                var touch = e.touches[0];
+                dragEvents = ['start'];
+                touchResult.textContent = 'Touch at: ' + Math.round(touch.clientX) + ', ' + Math.round(touch.clientY);
+            });
+
+            touchArea.addEventListener('touchmove', function(e) {
+                dragEvents.push('move');
+            });
+
+            touchArea.addEventListener('touchend', function(e) {
+                dragEvents.push('end');
+                touchResult.textContent = 'Drag events: ' + dragEvents.join(',');
+            });
+
+            touchArea.addEventListener('click', function(e) {
+                touchResult.textContent = 'Clicked at: ' + Math.round(e.clientX) + ', ' + Math.round(e.clientY);
+            });
+
+            tapButton.addEventListener('touchstart', function(e) {
+                tapResult.textContent = 'Button was tapped!';
+                e.preventDefault();
+            });
+
+            tapButton.addEventListener('click', function() {
+                tapResult.textContent = 'Button was clicked!';
+            });
+        </script>
     </body>
     </html>
     """
