@@ -15,6 +15,7 @@ import playwright.Playwright {
     cmd_spawn_grouped!: Cmd.spawn_grouped!,
 }
 
+import spec.Assert
 import spec.TestEnvironment {
     env_var!: Env.var!,
     http_send!: Http.send!,
@@ -28,25 +29,28 @@ pg_connect_stub! = |_| Err(NotImplemented)
 pg_cmd_new_stub = |_| {}
 pg_client_command_stub! = |_, _| Err(NotImplemented)
 
-## Test: bounding_box! on non-existent element times out waiting for selector
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
         { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/bounding-box-test")?
+        Playwright.navigate!(page, "$(worker_url)/")?
 
-        # Non-existent element - wait_for_selector times out
-        result = Playwright.bounding_box!(page, "#does-not-exist")
+        # Try to press Enter on a non-existent element - should fail with timeout
+        result = Playwright.key_press!(page, "#does-not-exist", Enter, [])
 
         when result is
-            Ok(_) ->
-                Err(ShouldHaveTimedOut)
+            Ok({}) ->
+                Playwright.close!(browser)?
+                Err(ShouldHaveFailed)
 
-            Err(WaitForTimeout(_)) ->
-                # Expected - element never appeared
+            Err(KeyPressError(msg)) ->
+                # Verify the error message mentions timeout or not found
+                has_timeout = Str.contains(msg, "Timeout") or Str.contains(msg, "timeout")
+                Assert.true(has_timeout) ? ErrorShouldMentionTimeout
                 Playwright.close!(browser)
 
-            Err(other) ->
-                Err(UnexpectedError(other))
+            Err(_) ->
+                Playwright.close!(browser)?
+                Err(UnexpectedErrorType)
     )

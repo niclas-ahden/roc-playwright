@@ -32,12 +32,27 @@ pg_client_command_stub! = |_, _| Err(NotImplemented)
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/form")?
+        Playwright.navigate!(page, "$(worker_url)/keyboard-form")?
 
-        result = Playwright.press_sequentially!(page, "###invalid", "value")
-        _ = Assert.err(result) ? InvalidSelectorShouldError
+        # Verify initial state
+        initial_status = Playwright.text_content!(page, "#status")?
+        Assert.eq(initial_status, "Form not submitted") ? InitialStateShouldNotBeSubmitted
+
+        # Fill the input with a name
+        Playwright.fill!(page, "#name-input", "John Doe")?
+
+        # Verify fill worked
+        filled_value = Playwright.input_value!(page, "#name-input")?
+        Assert.eq(filled_value, "John Doe") ? FillShouldWork
+
+        # Press Enter on the input to submit the form (targeted)
+        Playwright.key_press!(page, "#name-input", Enter, [])?
+
+        # Verify form was submitted
+        status = Playwright.text_content!(page, "#status")?
+        Assert.eq(status, "Form submitted with: John Doe") ? FormShouldBeSubmitted
 
         Playwright.close!(browser)
     )

@@ -40,12 +40,12 @@ main! = |_args|
 
         Playwright.navigate!(page, "$(worker_url)/never-appears")?
 
-        result = Playwright.wait_for_selector!(page, "#never")
+        result = Playwright.wait_for!(page, "#never", Visible)
 
         Playwright.close!(browser)?
 
         when result is
             Ok({}) -> Err(ShouldHaveTimedOut)
-            Err(WaitForSelectorTimeout(_)) -> Ok({})
+            Err(WaitForTimeout(_)) -> Ok({})
             Err(other) -> Err(UnexpectedError(other))
     )

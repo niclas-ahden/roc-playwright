@@ -47,7 +47,7 @@ main! = |_args|
                 # Should not succeed - element is not visible
                 Err(ShouldHaveTimedOut)
 
-            Err(WaitForSelectorTimeout(_)) ->
+            Err(WaitForTimeout(_)) ->
                 # Expected - element never became visible
                 Playwright.close!(browser)
 

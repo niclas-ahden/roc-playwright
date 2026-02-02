@@ -32,12 +32,23 @@ pg_client_command_stub! = |_, _| Err(NotImplemented)
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/form")?
+        Playwright.navigate!(page, "$(worker_url)/mouse-test")?
 
-        result = Playwright.press_sequentially!(page, "#does-not-exist", "value")
-        _ = Assert.err(result) ? NonExistentShouldError
+        # Drag: move to start, press, move to end, release
+        Playwright.mouse_move!(page, 50.0, 50.0)?
+        Playwright.mouse_down!(page)?
+        Playwright.mouse_move!(page, 200.0, 150.0)?
+        Playwright.mouse_up!(page)?
+
+        # Verify down and up events were recorded
+        events = Playwright.text_content!(page, "#events")?
+        Assert.eq(events, "down,up") ? ShouldRecordDownAndUp
+
+        # Verify the mouse moved to the drag target position
+        position = Playwright.text_content!(page, "#last-position")?
+        Assert.eq(position, "200,150") ? ShouldEndAtDragTarget
 
         Playwright.close!(browser)
     )

@@ -25,25 +25,22 @@ import spec.TestEnvironment {
     pg_client_command!: pg_client_command_stub!,
 }
 
-# Stubs for unused pg functions
-pg_connect_stub! = |_config| Err(NotImplemented)
-pg_cmd_new_stub = |_sql| {}
-pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
+pg_connect_stub! = |_| Err(NotImplemented)
+pg_cmd_new_stub = |_| {}
+pg_client_command_stub! = |_, _| Err(NotImplemented)
 
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page!(Chromium)?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        # Navigate to page with delayed element (appears after 500ms)
-        Playwright.navigate!(page, "$(worker_url)/delayed-element")?
+        Playwright.navigate!(page, "$(worker_url)/mouse-test")?
 
-        # Element should NOT be visible immediately after navigation
-        visible_before = Playwright.is_visible!(page, "#delayed")?
-        Assert.eq(visible_before, Bool.false) ? ElementShouldNotExistYet
+        # Move mouse into the area and verify position is tracked
+        Playwright.mouse_move!(page, 150.0, 100.0)?
 
-        # wait_for_selector! should wait until the element appears
-        Playwright.wait_for_selector!(page, "#delayed")?
+        position = Playwright.text_content!(page, "#last-position")?
+        Assert.eq(position, "150,100") ? PositionShouldMatch
 
         Playwright.close!(browser)
     )

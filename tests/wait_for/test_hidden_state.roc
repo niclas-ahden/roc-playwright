@@ -25,19 +25,29 @@ import spec.TestEnvironment {
     pg_client_command!: pg_client_command_stub!,
 }
 
-pg_connect_stub! = |_| Err(NotImplemented)
-pg_cmd_new_stub = |_| {}
-pg_client_command_stub! = |_, _| Err(NotImplemented)
+# Stubs for unused pg functions
+pg_connect_stub! = |_config| Err(NotImplemented)
+pg_cmd_new_stub = |_sql| {}
+pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
 
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        { browser, page } = Playwright.launch_page!(Chromium)?
 
-        Playwright.navigate!(page, "$(worker_url)/click-test")?
+        # Navigate to page with element that disappears after 500ms
+        Playwright.navigate!(page, "$(worker_url)/disappearing-element")?
 
-        result = Playwright.click!(page, "###invalid")
-        _ = Assert.err(result) ? ShouldErrorOnInvalidSelector
+        # Element should be visible initially
+        visible_before = Playwright.is_visible!(page, "#vanishing")?
+        Assert.eq(visible_before, Bool.true) ? ElementShouldExistInitially
+
+        # wait_for! with Hidden should wait until the element disappears
+        Playwright.wait_for!(page, "#vanishing", Hidden)?
+
+        # Element should no longer be visible
+        visible_after = Playwright.is_visible!(page, "#vanishing")?
+        Assert.eq(visible_after, Bool.false) ? ElementShouldHaveDisappeared
 
         Playwright.close!(browser)
     )

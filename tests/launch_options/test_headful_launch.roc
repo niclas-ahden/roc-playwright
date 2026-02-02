@@ -15,6 +15,7 @@ import playwright.Playwright {
     cmd_spawn_grouped!: Cmd.spawn_grouped!,
 }
 
+import spec.Assert
 import spec.TestEnvironment {
     env_var!: Env.var!,
     http_send!: Http.send!,
@@ -24,29 +25,21 @@ import spec.TestEnvironment {
     pg_client_command!: pg_client_command_stub!,
 }
 
-pg_connect_stub! = |_| Err(NotImplemented)
-pg_cmd_new_stub = |_| {}
-pg_client_command_stub! = |_, _| Err(NotImplemented)
+# Stubs for unused pg functions
+pg_connect_stub! = |_config| Err(NotImplemented)
+pg_cmd_new_stub = |_sql| {}
+pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
 
-## Test: bounding_box! on non-existent element times out waiting for selector
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        # Verify headless: Bool.false is accepted by the driver (launches a visible browser)
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(10000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/bounding-box-test")?
+        Playwright.navigate!(page, worker_url)?
 
-        # Non-existent element - wait_for_selector times out
-        result = Playwright.bounding_box!(page, "#does-not-exist")
+        title = Playwright.get_title!(page)?
+        Assert.eq(title, "Test Home Page") ? Title
 
-        when result is
-            Ok(_) ->
-                Err(ShouldHaveTimedOut)
-
-            Err(WaitForTimeout(_)) ->
-                # Expected - element never appeared
-                Playwright.close!(browser)
-
-            Err(other) ->
-                Err(UnexpectedError(other))
+        Playwright.close!(browser)
     )

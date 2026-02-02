@@ -25,21 +25,19 @@ import spec.TestEnvironment {
     pg_client_command!: pg_client_command_stub!,
 }
 
-# Stubs for unused pg functions
-pg_connect_stub! = |_config| Err(NotImplemented)
-pg_cmd_new_stub = |_sql| {}
-pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
+pg_connect_stub! = |_| Err(NotImplemented)
+pg_cmd_new_stub = |_| {}
+pg_client_command_stub! = |_, _| Err(NotImplemented)
 
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        # Test launch_page_with! with explicit options (headless: false shows browser window)
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(30000) })?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
 
-        Playwright.navigate!(page, worker_url)?
+        Playwright.navigate!(page, "$(worker_url)/form")?
 
-        title = Playwright.get_title!(page)?
-        Assert.eq(title, "Test Home Page") ? Title
+        result = Playwright.key_type!(page, "#does-not-exist", "value")
+        _ = Assert.err(result) ? NonExistentShouldError
 
         Playwright.close!(browser)
     )

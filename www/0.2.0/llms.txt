@@ -1,0 +1,340 @@
+# LLM Docs
+
+## Compact Docs
+
+Copy just this section if you want to keep your context small.
+If you want all docs, check the section `Full Docs per Module` below.
+
+Playwright.BrowserType : [ Chromium, Firefox, WebKit ]
+Playwright.WaitUntil : [ Load, DomContentLoaded, NetworkIdle, Commit ]
+Playwright.WaitForState : [ Visible, Hidden, Attached, Detached ]
+Playwright.Key : [ Escape, Enter, Tab, Backspace, Delete, Insert, Space, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, Shift, Control, Alt, Meta, KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9, Backquote, Minus, Equal, BracketLeft, BracketRight, Backslash, Semicolon, Quote, Comma, Period, Slash ]
+Playwright.Modifier : [ Control, Shift, Alt, Meta ]
+Playwright.launch! : BrowserType => Result Browser
+Playwright.launch_with! : { browser_type : BrowserType, headless : Bool, timeout : Timeout } => Result Browser
+
+## Full Docs per Module
+### Playwright
+
+Description:
+Handle to a browser instance. Returned by `launch!`.
+
+Description:
+A browser context with isolated session state.
+
+Description:
+A page (browser tab) where automation happens.
+
+BrowserType : [ Chromium, Firefox, WebKit ]
+
+Description:
+Which browser engine to use.
+
+Description:
+Timeout for operations. `NoTimeout` means wait indefinitely.
+
+WaitUntil : [ Load, DomContentLoaded, NetworkIdle, Commit ]
+
+Description:
+When to consider navigation complete.
+
+WaitForState : [ Visible, Hidden, Attached, Detached ]
+
+Description:
+State to wait for with `wait_for!`.
+
+Key : [ Escape, Enter, Tab, Backspace, Delete, Insert, Space, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, Shift, Control, Alt, Meta, KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ, Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9, Backquote, Minus, Equal, BracketLeft, BracketRight, Backslash, Semicolon, Quote, Comma, Period, Slash ]
+
+Description:
+Keyboard key for press, up, and down operations.
+
+Modifier : [ Control, Shift, Alt, Meta ]
+
+Description:
+Modifier keys for `key_press!` and `key_press_targetless!` combinations.
+
+Description:
+Bounding box of an element in CSS pixels, relative to the main frame viewport.
+
+launch! : BrowserType => Result Browser
+
+Description:
+Launch a browser with default settings (headless, 30s timeout).
+
+```
+browser = Playwright.launch!(Chromium)?
+```
+
+launch_with! : { browser_type : BrowserType, headless : Bool, timeout : Timeout } => Result Browser
+
+Description:
+Launch a browser with custom options.
+
+```
+browser = Playwright.launch_with!({
+    browser_type: Chromium,
+    headless: Bool.false,
+    timeout: TimeoutMilliseconds(60000),
+})?
+```
+
+Description:
+Launch a browser and create a page in one step.
+
+```
+{ browser, page } = Playwright.launch_page!(Chromium)?
+```
+
+Description:
+Launch a browser with custom options and create a page.
+
+```
+{ browser, page } = Playwright.launch_page_with!({
+    browser_type: Chromium,
+    headless: Bool.false,
+    timeout: TimeoutMilliseconds(5000),
+})?
+```
+
+Description:
+Create a new browser context with isolated session state.
+
+```
+context = Playwright.new_context!(browser)?
+```
+
+Description:
+Create a new browser context with options.
+
+```
+context = Playwright.new_context_with!(browser, { has_touch: Bool.true })?
+```
+
+Description:
+Create a new page (tab) in the browser context.
+
+```
+page = Playwright.new_page!(context)?
+```
+
+Description:
+Navigate to a URL.
+
+```
+Playwright.navigate!(page, "https://example.com")?
+```
+
+Description:
+Navigate to a URL with options.
+
+```
+Playwright.navigate_with!(page, { url: "https://example.com", wait_until: NetworkIdle })?
+```
+
+Description:
+Get the page title.
+
+```
+title = Playwright.get_title!(page)?
+```
+
+Description:
+Get the text content of an element.
+
+```
+text = Playwright.text_content!(page, "h1")?
+```
+
+Description:
+Get the value of an input or textarea.
+
+```
+value = Playwright.input_value!(page, "#email")?
+```
+
+Description:
+Get an attribute value from an element.
+
+```
+href = Playwright.get_attribute!(page, "a.nav-link", "href")?
+```
+
+Description:
+Click an element.
+
+```
+Playwright.click!(page, "button#submit")?
+```
+
+Description:
+Set the value of an input or textarea directly, without key events.
+Use [key_type!] if the app relies on keydown/keyup events (e.g., WASM).
+
+```
+Playwright.fill!(page, "#email", "user@example.com")?
+```
+
+Description:
+Focus an element and type text character by character (keydown/keyup per char).
+See `key_type_targetless!` for the page-level variant.
+
+```
+Playwright.key_type!(page, "#search", "hello")?
+```
+
+Description:
+Move the mouse to the center of an element.
+
+```
+Playwright.hover!(page, ".dropdown-trigger")?
+```
+
+Description:
+Check if an element is visible. Returns immediately without waiting.
+
+```
+is_shown = Playwright.is_visible!(page, "#modal")?
+```
+
+Description:
+Wait for an element to reach a specified state.
+
+```
+# Wait for element to appear (visible)
+Playwright.wait_for!(page, "#dynamic-content", Visible)?
+
+# Wait for element to disappear (hidden)
+Playwright.wait_for!(page, "text=Loading...", Hidden)?
+```
+
+Description:
+Count elements matching a selector. Returns `0` if none match.
+
+```
+count = Playwright.query_count!(page, "ul.results li")?
+```
+
+Description:
+Move the mouse to coordinates.
+
+```
+Playwright.mouse_move!(page, 100.0, 200.0)?
+```
+
+Description:
+Move the mouse to coordinates with interpolated steps.
+
+```
+Playwright.mouse_move_with_steps!(page, 100.0, 200.0, 10)?
+```
+
+Description:
+Press the left mouse button at current position.
+
+```
+Playwright.mouse_down!(page)?
+```
+
+Description:
+Release the left mouse button at current position.
+
+```
+Playwright.mouse_up!(page)?
+```
+
+Description:
+Get the bounding box of an element. Waits for the element to be visible.
+
+```
+box = Playwright.bounding_box!(page, ".swiper")?
+center_x = box.x + box.width / 2.0
+center_y = box.y + box.height / 2.0
+```
+
+Description:
+Tap an element. Requires `has_touch: Bool.true` context.
+
+```
+Playwright.tap!(page, "button#submit")?
+```
+
+Description:
+Tap at coordinates. Requires `has_touch: Bool.true` context.
+
+```
+Playwright.touchscreen_tap!(page, 100.0, 200.0)?
+```
+
+Description:
+Execute JavaScript and return the string result.
+
+```
+title = Playwright.evaluate!(page, "document.title")?
+```
+
+Only string results are supported. Convert other types in JS:
+
+```
+count = Playwright.evaluate!(page, "String(document.querySelectorAll('li').length)")?
+```
+
+Description:
+Drag from one point to another. Requires `has_touch: Bool.true` context.
+
+```
+Playwright.touch_drag!(page, { start_x: 100.0, start_y: 200.0, end_x: 300.0, end_y: 200.0 })?
+```
+
+Description:
+Focus an element and press a key (keydown + keyup).
+See `key_press_targetless!` for the page-level variant.
+
+```
+Playwright.key_press!(page, "#my-input", Enter, [])?
+Playwright.key_press!(page, "#my-input", KeyA, [Control])?
+```
+
+Description:
+Press a key at the page level (keydown + keyup, no focus change).
+
+```
+Playwright.key_press_targetless!(page, Escape, [])?
+Playwright.key_press_targetless!(page, KeyA, [Control, Shift])?
+```
+
+Description:
+Hold down a key at the page level. Use with `key_up_targetless!` to release.
+
+Prefer `key_press_targetless!` with modifiers for simple combos.
+Use `key_down_targetless!` / `key_up_targetless!` when modifier state
+must span multiple actions (e.g., Shift+click sequences).
+
+```
+Playwright.key_down_targetless!(page, Shift)?
+Playwright.click!(page, "#item1")?
+Playwright.click!(page, "#item3")?
+Playwright.key_up_targetless!(page, Shift)?
+```
+
+Description:
+Release a key at the page level. Use after `key_down_targetless!`.
+
+```
+Playwright.key_up_targetless!(page, Control)?
+```
+
+Description:
+Type text at the page level (keydown/keyup per char, no focus change).
+See `key_type!` for the targeted variant that focuses an element first.
+
+```
+Playwright.key_type_targetless!(page, "Hello, World!")?
+```
+
+Description:
+Close the browser and terminate the driver process.
+
+```
+Playwright.close!(browser)?
+```
+

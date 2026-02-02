@@ -15,6 +15,7 @@ import playwright.Playwright {
     cmd_spawn_grouped!: Cmd.spawn_grouped!,
 }
 
+import spec.Assert
 import spec.TestEnvironment {
     env_var!: Env.var!,
     http_send!: Http.send!,
@@ -28,25 +29,21 @@ pg_connect_stub! = |_| Err(NotImplemented)
 pg_cmd_new_stub = |_| {}
 pg_client_command_stub! = |_, _| Err(NotImplemented)
 
-## Test: bounding_box! on non-existent element times out waiting for selector
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/bounding-box-test")?
+        Playwright.navigate!(page, "$(worker_url)/mouse-test")?
 
-        # Non-existent element - wait_for_selector times out
-        result = Playwright.bounding_box!(page, "#does-not-exist")
+        # Move with 10 interpolated steps -- should fire multiple mousemove events
+        Playwright.mouse_move_with_steps!(page, 200.0, 150.0, 10)?
 
-        when result is
-            Ok(_) ->
-                Err(ShouldHaveTimedOut)
+        move_count_str = Playwright.text_content!(page, "#move-count")?
+        move_count = Str.to_u64(move_count_str) |> Result.with_default(0)
 
-            Err(WaitForTimeout(_)) ->
-                # Expected - element never appeared
-                Playwright.close!(browser)
+        # 10 steps should produce at least 10 mousemove events
+        Assert.true(move_count >= 10) ? ShouldHaveMultipleMoveEvents
 
-            Err(other) ->
-                Err(UnexpectedError(other))
+        Playwright.close!(browser)
     )

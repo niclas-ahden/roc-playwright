@@ -15,6 +15,7 @@ import playwright.Playwright {
     cmd_spawn_grouped!: Cmd.spawn_grouped!,
 }
 
+import spec.Assert
 import spec.TestEnvironment {
     env_var!: Env.var!,
     http_send!: Http.send!,
@@ -28,25 +29,24 @@ pg_connect_stub! = |_| Err(NotImplemented)
 pg_cmd_new_stub = |_| {}
 pg_client_command_stub! = |_, _| Err(NotImplemented)
 
-## Test: bounding_box! on non-existent element times out waiting for selector
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/bounding-box-test")?
+        Playwright.navigate!(page, "$(worker_url)/keyboard-select")?
 
-        # Non-existent element - wait_for_selector times out
-        result = Playwright.bounding_box!(page, "#does-not-exist")
+        # Click on the textarea to focus it
+        Playwright.click!(page, "#text-area")?
 
-        when result is
-            Ok(_) ->
-                Err(ShouldHaveTimedOut)
+        # Select all using key_down/key_up to hold Control across a separate press
+        Playwright.key_down_targetless!(page, Control)?
+        Playwright.key_press_targetless!(page, KeyA, [])?
+        Playwright.key_up_targetless!(page, Control)?
 
-            Err(WaitForTimeout(_)) ->
-                # Expected - element never appeared
-                Playwright.close!(browser)
+        # Verify the selection info shows all 58 characters selected
+        selection = Playwright.text_content!(page, "#selection-info")?
+        Assert.eq(selection, "Selection: 58 characters") ? AllTextShouldBeSelected
 
-            Err(other) ->
-                Err(UnexpectedError(other))
+        Playwright.close!(browser)
     )

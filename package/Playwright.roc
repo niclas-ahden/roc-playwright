@@ -1,3 +1,11 @@
+## A Roc library for browser automation, powered by [Playwright](https://playwright.dev/).
+##
+## ```
+## { browser, page } = Playwright.launch_page!(Chromium)?
+## Playwright.navigate!(page, "https://example.com")?
+## title = Playwright.get_title!(page)?
+## Playwright.close!(browser)
+## ```
 module
     {
         cmd_new,
@@ -9,6 +17,10 @@ module
         Page,
         BrowserType,
         Timeout,
+        WaitUntil,
+        WaitForState,
+        Key,
+        Modifier,
         BoundingBox,
         launch!,
         launch_with!,
@@ -19,7 +31,6 @@ module
         new_page!,
         navigate!,
         navigate_with!,
-        WaitUntil,
         get_title!,
         text_content!,
         input_value!,
@@ -27,10 +38,10 @@ module
         click!,
         tap!,
         fill!,
-        press_sequentially!,
+        key_type!,
         hover!,
         is_visible!,
-        wait_for_selector!,
+        wait_for!,
         query_count!,
         bounding_box!,
         mouse_move!,
@@ -40,6 +51,11 @@ module
         touchscreen_tap!,
         touch_drag!,
         evaluate!,
+        key_press!,
+        key_press_targetless!,
+        key_down_targetless!,
+        key_up_targetless!,
+        key_type_targetless!,
         close!,
     ]
 
@@ -355,6 +371,46 @@ NewContextParams : {
     hasTouch : Bool,
 }
 
+# Keyboard messages
+
+KeyPressMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : KeyPressParams,
+    metadata : {},
+}
+
+KeyPressParams : {
+    selector : Str,
+    key : Str,
+    timeout : U64,
+}
+
+KeyboardKeyMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : KeyboardKeyParams,
+    metadata : {},
+}
+
+KeyboardKeyParams : {
+    key : Str,
+}
+
+KeyboardTypeMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : KeyboardTypeParams,
+    metadata : {},
+}
+
+KeyboardTypeParams : {
+    text : Str,
+}
+
 ElementSimpleMessage : {
     id : U64,
     guid : Str,
@@ -372,6 +428,139 @@ ElementHandleResponseMessage : {
 ElementHandleResult : {
     element : Option ResponseRef,
 }
+
+## Handle to a browser instance. Returned by `launch!`.
+Browser : {
+    write_stdin! : List U8 => Result {} [WriteFailed],
+    read_stdout! : U64 => Result (List U8) [ReadFailed],
+    kill! : {} => Result {} [KillFailed],
+    browser_guid : Str,
+    timeout : Timeout,
+}
+
+## A browser context with isolated session state.
+Context : {
+    browser : Browser,
+    context_guid : Str,
+    has_touch : Bool,
+}
+
+## A page (browser tab) where automation happens.
+Page : {
+    context : Context,
+    page_guid : Str,
+    frame_guid : Str,
+}
+
+## Which browser engine to use.
+BrowserType : [Chromium, Firefox, WebKit]
+
+## Timeout for operations. `NoTimeout` means wait indefinitely.
+Timeout : [TimeoutMilliseconds U64, NoTimeout]
+
+## When to consider navigation complete.
+WaitUntil : [
+    Load,
+    DomContentLoaded,
+    NetworkIdle,
+    Commit,
+]
+
+## State to wait for with `wait_for!`.
+WaitForState : [Visible, Hidden, Attached, Detached]
+
+## Keyboard key for press, up, and down operations.
+Key : [
+    # Navigation
+    Escape,
+    Enter,
+    Tab,
+    Backspace,
+    Delete,
+    Insert,
+    Space,
+    # Arrows
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    # Page navigation
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    # Function keys
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    # Modifiers
+    Shift,
+    Control,
+    Alt,
+    Meta,
+    # Letters
+    KeyA,
+    KeyB,
+    KeyC,
+    KeyD,
+    KeyE,
+    KeyF,
+    KeyG,
+    KeyH,
+    KeyI,
+    KeyJ,
+    KeyK,
+    KeyL,
+    KeyM,
+    KeyN,
+    KeyO,
+    KeyP,
+    KeyQ,
+    KeyR,
+    KeyS,
+    KeyT,
+    KeyU,
+    KeyV,
+    KeyW,
+    KeyX,
+    KeyY,
+    KeyZ,
+    # Digits
+    Digit0,
+    Digit1,
+    Digit2,
+    Digit3,
+    Digit4,
+    Digit5,
+    Digit6,
+    Digit7,
+    Digit8,
+    Digit9,
+    # Punctuation
+    Backquote,
+    Minus,
+    Equal,
+    BracketLeft,
+    BracketRight,
+    Backslash,
+    Semicolon,
+    Quote,
+    Comma,
+    Period,
+    Slash,
+]
+
+## Modifier keys for `key_press!` and `key_press_targetless!` combinations.
+Modifier : [Control, Shift, Alt, Meta]
 
 ## Bounding box of an element in CSS pixels, relative to the main frame viewport.
 BoundingBox : {
@@ -398,48 +587,113 @@ BoundingBoxValue : {
     height : F64,
 }
 
-## Which browser engine to use.
-BrowserType : [Chromium, Firefox, WebKit]
+key_to_str : Key -> Str
+key_to_str = |key|
+    when key is
+        Escape -> "Escape"
+        Enter -> "Enter"
+        Tab -> "Tab"
+        Backspace -> "Backspace"
+        Delete -> "Delete"
+        Insert -> "Insert"
+        Space -> "Space"
+        ArrowUp -> "ArrowUp"
+        ArrowDown -> "ArrowDown"
+        ArrowLeft -> "ArrowLeft"
+        ArrowRight -> "ArrowRight"
+        Home -> "Home"
+        End -> "End"
+        PageUp -> "PageUp"
+        PageDown -> "PageDown"
+        F1 -> "F1"
+        F2 -> "F2"
+        F3 -> "F3"
+        F4 -> "F4"
+        F5 -> "F5"
+        F6 -> "F6"
+        F7 -> "F7"
+        F8 -> "F8"
+        F9 -> "F9"
+        F10 -> "F10"
+        F11 -> "F11"
+        F12 -> "F12"
+        Shift -> "Shift"
+        Control -> "Control"
+        Alt -> "Alt"
+        Meta -> "Meta"
+        KeyA -> "KeyA"
+        KeyB -> "KeyB"
+        KeyC -> "KeyC"
+        KeyD -> "KeyD"
+        KeyE -> "KeyE"
+        KeyF -> "KeyF"
+        KeyG -> "KeyG"
+        KeyH -> "KeyH"
+        KeyI -> "KeyI"
+        KeyJ -> "KeyJ"
+        KeyK -> "KeyK"
+        KeyL -> "KeyL"
+        KeyM -> "KeyM"
+        KeyN -> "KeyN"
+        KeyO -> "KeyO"
+        KeyP -> "KeyP"
+        KeyQ -> "KeyQ"
+        KeyR -> "KeyR"
+        KeyS -> "KeyS"
+        KeyT -> "KeyT"
+        KeyU -> "KeyU"
+        KeyV -> "KeyV"
+        KeyW -> "KeyW"
+        KeyX -> "KeyX"
+        KeyY -> "KeyY"
+        KeyZ -> "KeyZ"
+        Digit0 -> "Digit0"
+        Digit1 -> "Digit1"
+        Digit2 -> "Digit2"
+        Digit3 -> "Digit3"
+        Digit4 -> "Digit4"
+        Digit5 -> "Digit5"
+        Digit6 -> "Digit6"
+        Digit7 -> "Digit7"
+        Digit8 -> "Digit8"
+        Digit9 -> "Digit9"
+        Backquote -> "Backquote"
+        Minus -> "Minus"
+        Equal -> "Equal"
+        BracketLeft -> "BracketLeft"
+        BracketRight -> "BracketRight"
+        Backslash -> "Backslash"
+        Semicolon -> "Semicolon"
+        Quote -> "Quote"
+        Comma -> "Comma"
+        Period -> "Period"
+        Slash -> "Slash"
 
-## Timeout for operations. `NoTimeout` means wait indefinitely.
-Timeout : [TimeoutMilliseconds U64, NoTimeout]
+modifier_to_str : Modifier -> Str
+modifier_to_str = |modifier|
+    when modifier is
+        Control -> "Control"
+        Shift -> "Shift"
+        Alt -> "Alt"
+        Meta -> "Meta"
+
+## Build a combo string like "Control+Shift+KeyA" from modifiers and a key.
+key_combo_str : Key, List Modifier -> Str
+key_combo_str = |key, modifiers|
+    key_str = key_to_str(key)
+    when modifiers is
+        [] -> key_str
+        _ ->
+            modifiers
+            |> List.map(modifier_to_str)
+            |> List.append(key_str)
+            |> Str.join_with("+")
 
 timeout_to_ms : Timeout -> U64
 timeout_to_ms = |t|
     when t is
         TimeoutMilliseconds(ms) -> ms
         NoTimeout -> 0
-
-## Handle to a browser instance. Returned by `launch!`.
-Browser : {
-    write_stdin! : List U8 => Result {} [WriteFailed],
-    read_stdout! : U64 => Result (List U8) [ReadFailed],
-    kill! : {} => Result {} [KillFailed],
-    browser_guid : Str,
-    timeout : Timeout,
-}
-
-## A browser context with isolated session state.
-Context : {
-    browser : Browser,
-    context_guid : Str,
-    has_touch : Bool,
-}
-
-## A page (browser tab) where automation happens.
-Page : {
-    context : Context,
-    page_guid : Str,
-    frame_guid : Str,
-}
-
-## When to consider navigation complete.
-WaitUntil : [
-    Load,
-    DomContentLoaded,
-    NetworkIdle,
-    Commit,
-]
 
 # Message ID used for all commands.
 #
@@ -974,13 +1228,12 @@ click! = |page, selector|
         None ->
             Ok({})
 
-## Fill an input or textarea with text.
+## Set the value of an input or textarea directly, without key events.
+## Use [key_type!] if the app relies on keydown/keyup events (e.g., WASM).
 ##
 ## ```
 ## Playwright.fill!(page, "#email", "user@example.com")?
 ## ```
-##
-## > For WASM apps that rely on keyboard events, use [press_sequentially!] instead.
 fill! = |page, selector, value|
     context = page.context
     browser = context.browser
@@ -997,12 +1250,13 @@ fill! = |page, selector, value|
         None ->
             Ok({})
 
-## Type text character by character, triggering key events.
+## Focus an element and type text character by character (keydown/keyup per char).
+## See `key_type_targetless!` for the page-level variant.
 ##
 ## ```
-## Playwright.press_sequentially!(page, "#search", "hello")?
+## Playwright.key_type!(page, "#search", "hello")?
 ## ```
-press_sequentially! = |page, selector, text|
+key_type! = |page, selector, text|
     context = page.context
     browser = context.browser
     msg : PressSequentiallyMessage
@@ -1013,7 +1267,7 @@ press_sequentially! = |page, selector, text|
 
     when Option.get(response.error) is
         Some(err) ->
-            Err(PressSequentiallyError(err.error.message))
+            Err(KeyTypeError(err.error.message))
 
         None ->
             Ok({})
@@ -1063,24 +1317,34 @@ is_visible! = |page, selector|
                 Some(result) -> Ok(result.value)
                 None -> Err(IsVisibleNoResult)
 
-## Wait for an element to appear and be visible.
+## Wait for an element to reach a specified state.
 ##
 ## ```
-## Playwright.wait_for_selector!(page, "#dynamic-content")?
+## # Wait for element to appear (visible)
+## Playwright.wait_for!(page, "#dynamic-content", Visible)?
+##
+## # Wait for element to disappear (hidden)
+## Playwright.wait_for!(page, "text=Loading...", Hidden)?
 ## ```
-wait_for_selector! = |page, selector|
+wait_for! = |page, selector, state|
     context = page.context
     browser = context.browser
 
+    state_str = when state is
+        Visible -> "visible"
+        Hidden -> "hidden"
+        Attached -> "attached"
+        Detached -> "detached"
+
     msg : WaitForSelectorMessage
-    msg = { id: msg_id, guid: page.frame_guid, method: "waitForSelector", params: { selector, timeout: timeout_to_ms(browser.timeout), state: "visible" }, metadata: {} }
+    msg = { id: msg_id, guid: page.frame_guid, method: "waitForSelector", params: { selector, timeout: timeout_to_ms(browser.timeout), state: state_str }, metadata: {} }
     send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
 
     response = read_until_response!(browser.read_stdout!, msg_id)?
 
     when Option.get(response.error) is
         Some(err) ->
-            Err(WaitForSelectorTimeout(err.error.message))
+            Err(WaitForTimeout(err.error.message))
 
         None ->
             Ok({})
@@ -1359,7 +1623,7 @@ bounding_box! = |page, selector|
     browser = context.browser
 
     # Wait for element to be visible first (matches Playwright's auto-wait behavior)
-    wait_for_selector!(page, selector)?
+    wait_for!(page, selector, Visible)?
 
     # Query for the element to get its element handle guid
     query_msg : SelectorOnlyMessage
@@ -1620,6 +1884,122 @@ touch_drag! = |page, { start_x, start_y, end_x, end_y }|
         Err(PlaywrightError(msg)) -> Err(TouchDragError(msg))
         Err(EvaluateReturnedNull) -> Err(TouchDragError("No element at coordinates"))
         Err(_) -> Err(TouchDragError("Unknown error"))
+
+## Focus an element and press a key (keydown + keyup).
+## See `key_press_targetless!` for the page-level variant.
+##
+## ```
+## Playwright.key_press!(page, "#my-input", Enter, [])?
+## Playwright.key_press!(page, "#my-input", KeyA, [Control])?
+## ```
+key_press! = |page, selector, key, modifiers|
+    context = page.context
+    browser = context.browser
+    msg : KeyPressMessage
+    msg = { id: msg_id, guid: page.frame_guid, method: "press", params: { selector, key: key_combo_str(key, modifiers), timeout: timeout_to_ms(browser.timeout) }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(KeyPressError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Press a key at the page level (keydown + keyup, no focus change).
+##
+## ```
+## Playwright.key_press_targetless!(page, Escape, [])?
+## Playwright.key_press_targetless!(page, KeyA, [Control, Shift])?
+## ```
+key_press_targetless! = |page, key, modifiers|
+    context = page.context
+    browser = context.browser
+    msg : KeyboardKeyMessage
+    msg = { id: msg_id, guid: page.page_guid, method: "keyboardPress", params: { key: key_combo_str(key, modifiers) }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(KeyPressError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Hold down a key at the page level. Use with `key_up_targetless!` to release.
+##
+## Prefer `key_press_targetless!` with modifiers for simple combos.
+## Use `key_down_targetless!` / `key_up_targetless!` when modifier state
+## must span multiple actions (e.g., Shift+click sequences).
+##
+## ```
+## Playwright.key_down_targetless!(page, Shift)?
+## Playwright.click!(page, "#item1")?
+## Playwright.click!(page, "#item3")?
+## Playwright.key_up_targetless!(page, Shift)?
+## ```
+key_down_targetless! = |page, key|
+    context = page.context
+    browser = context.browser
+    msg : KeyboardKeyMessage
+    msg = { id: msg_id, guid: page.page_guid, method: "keyboardDown", params: { key: key_to_str(key) }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(KeyDownError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Release a key at the page level. Use after `key_down_targetless!`.
+##
+## ```
+## Playwright.key_up_targetless!(page, Control)?
+## ```
+key_up_targetless! = |page, key|
+    context = page.context
+    browser = context.browser
+    msg : KeyboardKeyMessage
+    msg = { id: msg_id, guid: page.page_guid, method: "keyboardUp", params: { key: key_to_str(key) }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(KeyUpError(err.error.message))
+
+        None ->
+            Ok({})
+
+## Type text at the page level (keydown/keyup per char, no focus change).
+## See `key_type!` for the targeted variant that focuses an element first.
+##
+## ```
+## Playwright.key_type_targetless!(page, "Hello, World!")?
+## ```
+key_type_targetless! = |page, text|
+    context = page.context
+    browser = context.browser
+    msg : KeyboardTypeMessage
+    msg = { id: msg_id, guid: page.page_guid, method: "keyboardType", params: { text }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) ->
+            Err(KeyTypeError(err.error.message))
+
+        None ->
+            Ok({})
 
 kill_process! = |kill!|
     kill!({})

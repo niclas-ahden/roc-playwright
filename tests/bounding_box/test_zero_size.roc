@@ -45,7 +45,7 @@ main! = |_args|
             Ok(_) ->
                 Err(ShouldHaveTimedOut)
 
-            Err(WaitForSelectorTimeout(_)) ->
+            Err(WaitForTimeout(_)) ->
                 # Expected - zero-size elements are not visible
                 Playwright.close!(browser)
 

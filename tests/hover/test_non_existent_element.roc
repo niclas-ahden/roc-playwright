@@ -32,13 +32,12 @@ pg_client_command_stub! = |_, _| Err(NotImplemented)
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page!(Chromium)?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(1000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/form")?
+        Playwright.navigate!(page, "$(worker_url)/hover-test")?
 
-        Playwright.press_sequentially!(page, "#message", "Hello from press_sequentially!")?
-        message = Playwright.input_value!(page, "#message")?
-        Assert.eq(message, "Hello from press_sequentially!") ? TypedMessage
+        result = Playwright.hover!(page, "#does-not-exist")
+        _ = Assert.err(result) ? ShouldErrorOnNonExistentElement
 
         Playwright.close!(browser)
     )

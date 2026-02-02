@@ -32,13 +32,20 @@ pg_client_command_stub! = |_, _| Err(NotImplemented)
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page!(Chromium)?
+        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
 
-        Playwright.navigate!(page, "$(worker_url)/form")?
+        Playwright.navigate!(page, "$(worker_url)/hover-test")?
 
-        Playwright.press_sequentially!(page, "#username", "typed_user")?
-        username = Playwright.input_value!(page, "#username")?
-        Assert.eq(username, "typed_user") ? TypedUsername
+        # Verify initial state
+        initial = Playwright.text_content!(page, "#status")?
+        Assert.eq(initial, "Not hovered") ? ShouldNotBeHoveredInitially
+
+        # Hover over the target element
+        Playwright.hover!(page, "#hover-target")?
+
+        # Verify hover was detected
+        after_hover = Playwright.text_content!(page, "#status")?
+        Assert.eq(after_hover, "Hovered") ? ShouldBeHovered
 
         Playwright.close!(browser)
     )
