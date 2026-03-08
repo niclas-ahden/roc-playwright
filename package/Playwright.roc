@@ -429,7 +429,7 @@ ElementHandleResult : {
     element : Option ResponseRef,
 }
 
-## Handle to a browser instance. Returned by `launch!`.
+## Handle to a browser instance. Returned by [launch!].
 Browser : {
     write_stdin! : List U8 => Result {} [WriteFailed],
     read_stdout! : U64 => Result (List U8) [ReadFailed],
@@ -466,7 +466,7 @@ WaitUntil : [
     Commit,
 ]
 
-## State to wait for with `wait_for!`.
+## State to wait for with [wait_for!].
 WaitForState : [Visible, Hidden, Attached, Detached]
 
 ## Keyboard key for press, up, and down operations.
@@ -559,7 +559,7 @@ Key : [
     Slash,
 ]
 
-## Modifier keys for `key_press!` and `key_press_targetless!` combinations.
+## Modifier keys for [key_press!] and [key_press_targetless!] combinations.
 Modifier : [Control, Shift, Alt, Meta]
 
 ## Bounding box of an element in CSS pixels, relative to the main frame viewport.
@@ -1228,8 +1228,11 @@ click! = |page, selector|
         None ->
             Ok({})
 
-## Set the value of an input or textarea directly, without key events.
-## Use [key_type!] if the app relies on keydown/keyup events (e.g., WASM).
+## Set the value of an input or textarea directly, without individual key events.
+## Use [key_type!] if the app relies on keydown/keyup events.
+##
+## Remember that for client-side apps you'll need to [wait_for!] your app to
+## initialize and register event listeners before calling [fill!].
 ##
 ## ```
 ## Playwright.fill!(page, "#email", "user@example.com")?
@@ -1251,7 +1254,7 @@ fill! = |page, selector, value|
             Ok({})
 
 ## Focus an element and type text character by character (keydown/keyup per char).
-## See `key_type_targetless!` for the page-level variant.
+## See [key_type_targetless!] for the page-level variant.
 ##
 ## ```
 ## Playwright.key_type!(page, "#search", "hello")?
@@ -1886,7 +1889,7 @@ touch_drag! = |page, { start_x, start_y, end_x, end_y }|
         Err(_) -> Err(TouchDragError("Unknown error"))
 
 ## Focus an element and press a key (keydown + keyup).
-## See `key_press_targetless!` for the page-level variant.
+## See [key_press_targetless!] for the page-level variant.
 ##
 ## ```
 ## Playwright.key_press!(page, "#my-input", Enter, [])?
@@ -1930,10 +1933,10 @@ key_press_targetless! = |page, key, modifiers|
         None ->
             Ok({})
 
-## Hold down a key at the page level. Use with `key_up_targetless!` to release.
+## Hold down a key at the page level. Use with [key_up_targetless!] to release.
 ##
-## Prefer `key_press_targetless!` with modifiers for simple combos.
-## Use `key_down_targetless!` / `key_up_targetless!` when modifier state
+## Prefer [key_press_targetless!] with modifiers for simple combos.
+## Use [key_down_targetless!] / [key_up_targetless!] when modifier state
 ## must span multiple actions (e.g., Shift+click sequences).
 ##
 ## ```
@@ -1958,7 +1961,7 @@ key_down_targetless! = |page, key|
         None ->
             Ok({})
 
-## Release a key at the page level. Use after `key_down_targetless!`.
+## Release a key at the page level. Use after [key_down_targetless!].
 ##
 ## ```
 ## Playwright.key_up_targetless!(page, Control)?
@@ -1980,7 +1983,7 @@ key_up_targetless! = |page, key|
             Ok({})
 
 ## Type text at the page level (keydown/keyup per char, no focus change).
-## See `key_type!` for the targeted variant that focuses an element first.
+## See [key_type!] for the targeted variant that focuses an element first.
 ##
 ## ```
 ## Playwright.key_type_targetless!(page, "Hello, World!")?
