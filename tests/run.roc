@@ -1,10 +1,11 @@
 app [main!] {
-    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.25.0/2Qj7ggHJdVV9jAspIjvskp_cUWvAyh7B9I-Ma_sY4zk.tar.br",
+    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.27.0/G-A6F5ny0IYDx4hmF3t_YPHUSR28c9ZXMBnh0FEJjwk.tar.br",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.1.0/1gNyp2QAxomebg0_bZTY4WwD6WFyLjVl6TbC7Dr7AX8.tar.br",
 }
 
 import pf.Arg
 import pf.Cmd
+import pf.Env
 import pf.Http
 import pf.Sleep
 import pf.Stdout
@@ -34,8 +35,11 @@ utc_now_as_millis! : {} => I128
 utc_now_as_millis! = |{}|
     Utc.to_millis_since_epoch(Utc.now!({}))
 
-max_workers : U16
-max_workers = 16
+max_workers! : {} => U16
+max_workers! = |{}|
+    when Env.var!("ROC_SPEC_MAX_WORKERS") is
+        Ok(val) -> Str.to_u16(val) |> Result.with_default(4)
+        Err(_) -> 4
 
 default_base_port : U16
 default_base_port = 9000
@@ -67,28 +71,29 @@ main! : List Arg.Arg => Result {} _
 main! = |args|
     pattern = get_pattern(args)
     base_port = default_base_port
+    workers = max_workers!({})
 
-    Stdout.line!("Starting $(Num.to_str(max_workers)) workers...")?
+    Stdout.line!("Starting $(Num.to_str(workers)) workers...")?
 
     # Phase 1: Spawn all workers (using spawn_grouped! for proper cleanup)
-    List.range({ start: At(0), end: Before(max_workers) })
+    List.range({ start: At(0), end: Before(workers) })
         |> List.for_each_try!(|index|
             spawn_worker!(base_port, index)
         )?
 
     # Phase 2: Wait for all workers to be ready
     wait_for_all_workers!({
-        count: max_workers,
+        count: workers,
         base_port,
         max_attempts: 150,
         delay_ms: 200,
     })?
 
-    Stdout.line!("All $(Num.to_str(max_workers)) workers ready")?
+    Stdout.line!("All $(Num.to_str(workers)) workers ready")?
 
     # Run tests
     results = Spec.run_filtered!("tests", {
-        max_workers,
+        max_workers: workers,
         worker_envs: get_worker_envs,
         before_each!: before_each_noop!,
         per_test_timeout_ms: 60000,

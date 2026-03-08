@@ -1,5 +1,5 @@
 app [main!] {
-    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.25.0/2Qj7ggHJdVV9jAspIjvskp_cUWvAyh7B9I-Ma_sY4zk.tar.br",
+    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.27.0/G-A6F5ny0IYDx4hmF3t_YPHUSR28c9ZXMBnh0FEJjwk.tar.br",
     playwright: "../../package/main.roc",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.1.0/1gNyp2QAxomebg0_bZTY4WwD6WFyLjVl6TbC7Dr7AX8.tar.br",
 }
@@ -39,10 +39,11 @@ main! = |_args|
         # Click on the textarea to focus it
         Playwright.click!(page, "#text-area")?
 
-        # Select all using key_down/key_up to hold Control across a separate press
-        Playwright.key_down_targetless!(page, Control)?
+        # Select all using key_down/key_up to hold ControlOrMeta across a separate press
+        # (ControlOrMeta resolves to Meta on macOS, Control on Linux/Windows)
+        Playwright.key_down_targetless!(page, ControlOrMeta)?
         Playwright.key_press_targetless!(page, KeyA, [])?
-        Playwright.key_up_targetless!(page, Control)?
+        Playwright.key_up_targetless!(page, ControlOrMeta)?
 
         # Verify the selection info shows all 58 characters selected
         selection = Playwright.text_content!(page, "#selection-info")?

@@ -1,5 +1,5 @@
 app [Model, init!, respond!] {
-    pf: platform "/home/niclas/dev/growthagent/basic-webserver/platform/main.roc",
+    pf: platform "https://github.com/growthagent/basic-webserver/releases/download/0.19.0/iDXsSC5nMLc-S634O1Bjn8swkxJZeYyHHAkVL42phMc.tar.br",
 }
 
 import pf.Http exposing [Request, Response]

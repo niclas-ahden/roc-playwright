@@ -455,7 +455,9 @@ Page : {
 ## Which browser engine to use.
 BrowserType : [Chromium, Firefox, WebKit]
 
-## Timeout for operations. `NoTimeout` means wait indefinitely.
+## Timeout for action and navigation operations (click, fill, navigate, etc.).
+## Does not affect browser launch, which always uses a 30s timeout.
+## `NoTimeout` means wait indefinitely.
 Timeout : [TimeoutMilliseconds U64, NoTimeout]
 
 ## When to consider navigation complete.
@@ -507,6 +509,7 @@ Key : [
     Control,
     Alt,
     Meta,
+    ControlOrMeta,
     # Letters
     KeyA,
     KeyB,
@@ -560,7 +563,8 @@ Key : [
 ]
 
 ## Modifier keys for [key_press!] and [key_press_targetless!] combinations.
-Modifier : [Control, Shift, Alt, Meta]
+## `ControlOrMeta` resolves to `Meta` on macOS and `Control` on Linux/Windows.
+Modifier : [Control, Shift, Alt, Meta, ControlOrMeta]
 
 ## Bounding box of an element in CSS pixels, relative to the main frame viewport.
 BoundingBox : {
@@ -621,6 +625,7 @@ key_to_str = |key|
         Control -> "Control"
         Alt -> "Alt"
         Meta -> "Meta"
+        ControlOrMeta -> "ControlOrMeta"
         KeyA -> "KeyA"
         KeyB -> "KeyB"
         KeyC -> "KeyC"
@@ -676,6 +681,7 @@ modifier_to_str = |modifier|
         Shift -> "Shift"
         Alt -> "Alt"
         Meta -> "Meta"
+        ControlOrMeta -> "ControlOrMeta"
 
 ## Build a combo string like "Control+Shift+KeyA" from modifiers and a key.
 key_combo_str : Key, List Modifier -> Str
@@ -861,7 +867,9 @@ initialize_browser! = |child, browser_type, headless, timeout|
 
     # Now launch the browser
     launch_msg : LaunchMessage
-    launch_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: timeout_to_ms(timeout) }, metadata: {} }
+    # Always use 30s for browser launch (matching Playwright's default).
+    # The user-provided timeout is for action/navigation operations only.
+    launch_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: 30000 }, metadata: {} }
     send_message!(init_write, Encode.to_bytes(launch_msg, Json.utf8))?
 
     # Read browser creation response
@@ -1012,15 +1020,26 @@ extract_browser_type_guid = |bytes, browser_type_name, default|
 read_until_browser_guid! = |read_stdout!|
     bytes = receive_message_bytes!(read_stdout!)?
 
-    when decode_create_message(bytes) is
-        Ok(msg) ->
-            if msg.params.type == "Browser" then
-                Ok(msg.params.guid)
-            else
-                read_until_browser_guid!(read_stdout!)
+    # Check if this is the launch response (id:2) arriving before a Browser
+    # __create__ event — this means the launch failed (e.g. timeout expired).
+    when decode_id_check(bytes) is
+        Ok(id_msg) ->
+            when Option.get(id_msg.id) is
+                Some(2) ->
+                    Err(BrowserLaunchFailed)
+
+                _ ->
+                    when decode_create_message(bytes) is
+                        Ok(msg) ->
+                            if msg.params.type == "Browser" then
+                                Ok(msg.params.guid)
+                            else
+                                read_until_browser_guid!(read_stdout!)
+
+                        Err(_) ->
+                            read_until_browser_guid!(read_stdout!)
 
         Err(_) ->
-            # Not a create message, keep reading
             read_until_browser_guid!(read_stdout!)
 
 read_until_context_guid! = |read_stdout!|

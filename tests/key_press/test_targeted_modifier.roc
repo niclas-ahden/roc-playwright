@@ -1,5 +1,5 @@
 app [main!] {
-    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.25.0/2Qj7ggHJdVV9jAspIjvskp_cUWvAyh7B9I-Ma_sY4zk.tar.br",
+    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.27.0/G-A6F5ny0IYDx4hmF3t_YPHUSR28c9ZXMBnh0FEJjwk.tar.br",
     playwright: "../../package/main.roc",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.1.0/1gNyp2QAxomebg0_bZTY4WwD6WFyLjVl6TbC7Dr7AX8.tar.br",
 }
@@ -37,8 +37,8 @@ main! = |_args|
         Playwright.navigate!(page, "$(worker_url)/keyboard-select")?
 
         # Use targeted key_press! with modifier to select all text in the textarea
-        # This focuses the element and sends Control+A in one call
-        Playwright.key_press!(page, "#text-area", KeyA, [Control])?
+        # This focuses the element and sends ControlOrMeta+A in one call (works on both macOS and Linux)
+        Playwright.key_press!(page, "#text-area", KeyA, [ControlOrMeta])?
 
         # Verify the selection info shows all 58 characters selected
         selection = Playwright.text_content!(page, "#selection-info")?
