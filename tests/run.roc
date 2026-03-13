@@ -1,6 +1,6 @@
 app [main!] {
     pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.27.0/G-A6F5ny0IYDx4hmF3t_YPHUSR28c9ZXMBnh0FEJjwk.tar.br",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.1.0/1gNyp2QAxomebg0_bZTY4WwD6WFyLjVl6TbC7Dr7AX8.tar.br",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.2.0/Cv22_pXKIt82Cz5qzFxdm47SNo81RDx6j4gahQIJvME.tar.br",
 }
 
 import pf.Arg
@@ -60,16 +60,18 @@ before_each_noop! = |_worker_index|
 
 server_binary_path = "./test-server"
 
-## Extract pattern filter from command line args (first arg after program name)
-get_pattern : List Arg.Arg -> Str
-get_pattern = |args|
-    when List.get(args, 1) is
-        Ok(arg) -> Arg.display(arg)
-        Err(_) -> ""
+## Parse command line args into pattern and flags
+parse_args : List Arg.Arg -> { pattern : Str, fail_fast : Bool }
+parse_args = |args|
+    args_strs = args |> List.map(Arg.display) |> List.drop_first(1)
+    {
+        pattern: args_strs |> List.keep_if(|a| !Str.starts_with(a, "--")) |> List.first |> Result.with_default(""),
+        fail_fast: List.contains(args_strs, "--fail-fast"),
+    }
 
 main! : List Arg.Arg => Result {} _
 main! = |args|
-    pattern = get_pattern(args)
+    { pattern, fail_fast } = parse_args(args)
     base_port = default_base_port
     workers = max_workers!({})
 
@@ -98,6 +100,7 @@ main! = |args|
         before_each!: before_each_noop!,
         per_test_timeout_ms: 60000,
         quiet: Bool.true,
+        fail_fast,
     }, pattern)?
 
     # Report results
