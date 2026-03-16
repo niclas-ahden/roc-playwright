@@ -36,6 +36,8 @@ module
         input_value!,
         get_attribute!,
         click!,
+        check!,
+        uncheck!,
         tap!,
         fill!,
         key_type!,
@@ -50,6 +52,7 @@ module
         mouse_up!,
         touchscreen_tap!,
         touch_drag!,
+        touch_scroll!,
         evaluate!,
         key_press!,
         key_press_targetless!,
@@ -178,6 +181,7 @@ LaunchMessage : {
 LaunchParams : {
     headless : Bool,
     timeout : U64,
+    args : List Str,
 }
 
 SimpleMessage : {
@@ -417,6 +421,38 @@ ElementSimpleMessage : {
     method : Str,
     params : {},
     metadata : {},
+}
+
+CdpSessionMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : CdpSessionParams,
+    metadata : {},
+}
+
+CdpSessionParams : {
+    page : ResponseRef,
+}
+
+CdpScrollGestureMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : CdpScrollGestureSendParams,
+    metadata : {},
+}
+
+CdpScrollGestureSendParams : {
+    method : Str,
+    params : CdpScrollGestureParams,
+}
+
+CdpScrollGestureParams : {
+    x : F64,
+    y : F64,
+    yDistance : F64,
+    xDistance : F64,
 }
 
 ElementHandleResponseMessage : {
@@ -865,11 +901,12 @@ initialize_browser! = |child, browser_type, headless, timeout|
     browser_type_name = browser_type_to_name(browser_type)
     browser_type_guid = read_init_and_find_browser_type!(init_read, browser_type_name)?
 
-    # Now launch the browser
-    launch_msg : LaunchMessage
+    # Now launch the browser.
     # Always use 30s for browser launch (matching Playwright's default).
     # The user-provided timeout is for action/navigation operations only.
-    launch_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: 30000 }, metadata: {} }
+    #
+    launch_msg : LaunchMessage
+    launch_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: 30000, args: [] }, metadata: {} }
     send_message!(init_write, Encode.to_bytes(launch_msg, Json.utf8))?
 
     # Read browser creation response
@@ -1055,6 +1092,19 @@ read_until_context_guid! = |read_stdout!|
         Err(_) ->
             # Not a create message, keep reading
             read_until_context_guid!(read_stdout!)
+
+read_until_cdp_session_guid! = |read_stdout!|
+    bytes = receive_message_bytes!(read_stdout!)?
+
+    when decode_create_message(bytes) is
+        Ok(msg) ->
+            if msg.params.type == "CDPSession" then
+                Ok(msg.params.guid)
+            else
+                read_until_cdp_session_guid!(read_stdout!)
+
+        Err(_) ->
+            read_until_cdp_session_guid!(read_stdout!)
 
 read_until_page_and_frame! = |read_stdout!|
     read_page_frame_loop!(read_stdout!, "", "")
@@ -1246,6 +1296,48 @@ click! = |page, selector|
 
         None ->
             Ok({})
+
+## Check a checkbox or radio button. If already checked, this is a no-op.
+## Sets the checked state via JS and dispatches `input` + `change` events.
+##
+## Note: Chromium's CDP click does not fire `change` events on custom-styled
+## checkboxes (`appearance: none`), so we set the state and dispatch events
+## directly via JS instead.
+##
+## ```
+## Playwright.check!(page, "input[type='checkbox']")?
+## ```
+check! = |page, selector|
+    set_checked!(page, selector, Bool.true)
+
+## Uncheck a checkbox. If already unchecked, this is a no-op.
+## Sets the checked state via JS and dispatches `input` + `change` events.
+##
+## ```
+## Playwright.uncheck!(page, "input[type='checkbox']")?
+## ```
+uncheck! = |page, selector|
+    set_checked!(page, selector, Bool.false)
+
+set_checked! = |page, selector, desired|
+    desired_str = if desired then "true" else "false"
+    js =
+        """
+        (() => {
+            const el = document.querySelector("${selector}");
+            if (!el) return 'ElementNotFound';
+            if (el.checked === ${desired_str}) return 'ok';
+            el.checked = ${desired_str};
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+            return 'ok';
+        })()
+        """
+    result = evaluate!(page, js)?
+    if result == "ok" then
+        Ok({})
+    else
+        Err(CheckError(result))
 
 ## Set the value of an input or textarea directly, without individual key events.
 ## Use [key_type!] if the app relies on keydown/keyup events.
@@ -1841,14 +1933,67 @@ evaluate! = |page, expression|
         Ok(value) -> Ok(value)
         Err(ValueIsNull) -> Err(EvaluateReturnedNull)
 
-## Drag from one point to another. Requires `has_touch: Bool.true` context.
+## Simulate a touch scroll gesture using CDP's `Input.synthesizeScrollGesture`.
+## This goes through Chrome's compositor touch handling pipeline — the same
+## path used by the GPU benchmarking system for real touch gesture simulation.
+## Triggers native scrolling and respects `touch-action` CSS.
+## Requires `has_touch: Bool.true` context.
+##
+## ```
+## Playwright.touch_scroll!(page, { start_x: 100.0, start_y: 400.0, end_x: 100.0, end_y: 200.0 })?
+## ```
+touch_scroll! = |page, { start_x, start_y, end_x, end_y }|
+    context = page.context
+    browser = context.browser
+
+    # Create a CDP session
+    cdp_msg : CdpSessionMessage
+    cdp_msg = { id: msg_id, guid: context.context_guid, method: "newCDPSession", params: { page: { guid: page.page_guid } }, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(cdp_msg, Json.utf8))?
+
+    cdp_session_guid = read_until_cdp_session_guid!(browser.read_stdout!)?
+    _cdp_response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    # synthesizeScrollGesture distances: the vector the finger moves
+    x_distance = end_x - start_x
+    y_distance = end_y - start_y
+
+    scroll_msg : CdpScrollGestureMessage
+    scroll_msg = {
+        id: msg_id,
+        guid: cdp_session_guid,
+        method: "send",
+        params: {
+            method: "Input.synthesizeScrollGesture",
+            params: {
+                x: start_x,
+                y: start_y,
+                xDistance: x_distance,
+                yDistance: y_distance,
+            },
+        },
+        metadata: {},
+    }
+    send_message!(browser.write_stdin!, Encode.to_bytes(scroll_msg, Json.utf8))?
+    _response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    # Detach the CDP session
+    detach_msg : SimpleMessage
+    detach_msg = { id: msg_id, guid: cdp_session_guid, method: "detach", params: {}, metadata: {} }
+    send_message!(browser.write_stdin!, Encode.to_bytes(detach_msg, Json.utf8))?
+    _detach_response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    Ok({})
+
+## Drag from one point to another using synthetic JavaScript touch events.
+## Fires JS `addEventListener` handlers but does NOT trigger native browser
+## scrolling. Use [touch_scroll!] for testing native scroll behavior.
+## Requires `has_touch: Bool.true` context.
 ##
 ## ```
 ## Playwright.touch_drag!(page, { start_x: 100.0, start_y: 200.0, end_x: 300.0, end_y: 200.0 })?
 ## ```
 touch_drag! = |page, { start_x, start_y, end_x, end_y }|
-    # Use JavaScript to dispatch synthetic touch events
-    # This is the standard approach for touch drag gestures in Playwright
     js =
         """
         (() => {
@@ -1888,7 +2033,6 @@ touch_drag! = |page, { start_x, start_y, end_x, end_y }|
 
             dispatchTouchEvent('touchstart', startX, startY, true);
 
-            // Intermediate move events
             const steps = 5;
             for (let i = 1; i <= steps; i++) {
                 const x = startX + (endX - startX) * (i / steps);
