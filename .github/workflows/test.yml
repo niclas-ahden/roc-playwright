@@ -26,6 +26,7 @@ jobs:
             substituters = https://cache.nixos.org http://127.0.0.1:37515
             trusted-substituters = https://cache.nixos.org http://127.0.0.1:37515
             narinfo-cache-negative-ttl = 0
+            require-sigs = false
 
       - uses: DeterminateSystems/magic-nix-cache-action@v8
 
