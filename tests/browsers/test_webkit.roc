@@ -8,6 +8,7 @@ import pf.Arg
 import pf.Cmd
 import pf.Env
 import pf.Http
+import pf.Stdout
 
 import playwright.Playwright {
     cmd_new: Cmd.new,
@@ -32,16 +33,22 @@ pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
 
 main! : List Arg.Arg => Result {} _
 main! = |_args|
-    TestEnvironment.with!(|worker_url|
-        { browser, page } = Playwright.launch_page!(WebKit)?
+    when Env.var!("CI") is
+        Ok(_) ->
+            Stdout.line!("Skipped: WebKit requires system libraries not available in CI")?
+            Ok({})
 
-        Playwright.navigate!(page, worker_url)?
+        Err(_) ->
+            TestEnvironment.with!(|worker_url|
+                { browser, page } = Playwright.launch_page!(WebKit)?
 
-        title = Playwright.get_title!(page)?
-        Assert.eq(title, "Test Home Page") ? Title
+                Playwright.navigate!(page, worker_url)?
 
-        h1 = Playwright.text_content!(page, "h1")?
-        Assert.eq(h1, "Welcome to the Test Server") ? H1
+                title = Playwright.get_title!(page)?
+                Assert.eq(title, "Test Home Page") ? Title
 
-        Playwright.close!(browser)
-    )
+                h1 = Playwright.text_content!(page, "h1")?
+                Assert.eq(h1, "Welcome to the Test Server") ? H1
+
+                Playwright.close!(browser)
+            )
