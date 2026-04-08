@@ -29,31 +29,36 @@ pg_connect_stub! = |_| Err(NotImplemented)
 pg_cmd_new_stub = |_| {}
 pg_client_command_stub! = |_, _| Err(NotImplemented)
 
-## Test: touchscreen_tap! triggers a touch event at specific coordinates
+## Test: touchscreen_tap! triggers a click at the correct coordinates
 main! : List Arg.Arg => Result {} _
 main! = |_args|
     TestEnvironment.with!(|worker_url|
-        # Launch with touch enabled
         browser = Playwright.launch_with!({ browser_type: Chromium, headless: Bool.true, timeout: TimeoutMilliseconds(5000) })?
         context = Playwright.new_context_with!(browser, { has_touch: Bool.true })?
         page = Playwright.new_page!(context)?
 
         Playwright.navigate!(page, "$(worker_url)/touch-test")?
 
-        # Get bounding box of touch area to know where to tap
-        box = Playwright.bounding_box!(page, "#touch-area")?
+        # Verify initial state
+        initial_text = Playwright.text_content!(page, "#touch-result")?
+        Assert.eq(initial_text, "No touch yet") ? WrongInitialState(initial_text)
 
-        # Tap in the center of the touch area
+        # Tap in the center of the touch area (300x200 element)
+        box = Playwright.bounding_box!(page, "#touch-area")?
         center_x = box.x + (box.width / 2.0)
         center_y = box.y + (box.height / 2.0)
-
         Playwright.touchscreen_tap!(page, center_x, center_y)?
 
-        # Verify touch event was received (shows coordinates)
+        # The tap triggers touch events then a click. The click handler writes
+        # "Clicked at: X, Y" with the actual coordinates.
         result_text = Playwright.text_content!(page, "#touch-result")?
+        Assert.true(Str.starts_with(result_text, "Clicked at:")) ? WrongResultFormat(result_text)
 
-        # The result should contain "Touch at:" or "Clicked at:" depending on browser
-        Assert.true(Str.contains(result_text, "at:")) ? ShouldContainCoordinates
+        # Verify coordinates are reasonable (should be near the center of the 300x200 area)
+        # The touch area starts at box.x, box.y, so center is roughly (box.x + 150, box.y + 100)
+        # We just verify the coordinates are present and are numbers
+        coords = Str.replace_first(result_text, "Clicked at: ", "")
+        Assert.true(Str.contains(coords, ",")) ? MissingCommaInCoords(coords)
 
         Playwright.close!(browser)
     )
