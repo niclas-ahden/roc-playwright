@@ -28,5 +28,8 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
 
+      - name: Fetch Nix dependencies
+        run: nix develop --command true
+
       - name: Run tests
         run: nix develop -c sh -c './tests.sh'
