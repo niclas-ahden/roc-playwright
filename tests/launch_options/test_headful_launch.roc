@@ -8,6 +8,7 @@ import pf.Arg
 import pf.Cmd
 import pf.Env
 import pf.Http
+import pf.Stdout
 
 import playwright.Playwright {
     cmd_new: Cmd.new,
@@ -32,14 +33,20 @@ pg_client_command_stub! = |_cmd, _db| Err(NotImplemented)
 
 main! : List Arg.Arg => Result {} _
 main! = |_args|
-    TestEnvironment.with!(|worker_url|
-        # Verify headless: Bool.false is accepted by the driver (launches a visible browser)
-        { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(10000) })?
+    when Env.var!("CI") is
+        Ok(_) ->
+            Stdout.line!("Skipped: requires display (no headed browser in CI)")?
+            Ok({})
 
-        Playwright.navigate!(page, worker_url)?
+        Err(_) ->
+            TestEnvironment.with!(|worker_url|
+                # Verify headless: Bool.false is accepted by the driver (launches a visible browser)
+                { browser, page } = Playwright.launch_page_with!({ browser_type: Chromium, headless: Bool.false, timeout: TimeoutMilliseconds(10000) })?
 
-        title = Playwright.get_title!(page)?
-        Assert.eq(title, "Test Home Page") ? Title
+                Playwright.navigate!(page, worker_url)?
 
-        Playwright.close!(browser)
-    )
+                title = Playwright.get_title!(page)?
+                Assert.eq(title, "Test Home Page") ? Title
+
+                Playwright.close!(browser)
+            )
