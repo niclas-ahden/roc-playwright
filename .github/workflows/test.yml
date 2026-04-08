@@ -23,7 +23,8 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           # Trust magic-nix-cache-action
           extra_nix_config: |
-            extra-trusted-substituters = http://127.0.0.1:37515
+            substituters = https://cache.nixos.org http://127.0.0.1:37515
+            trusted-substituters = https://cache.nixos.org http://127.0.0.1:37515
 
       - uses: DeterminateSystems/magic-nix-cache-action@v8
 
