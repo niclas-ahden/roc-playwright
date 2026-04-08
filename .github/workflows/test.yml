@@ -1,6 +1,8 @@
 name: Tests
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -19,6 +21,8 @@ jobs:
       - uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
 
       - name: Run tests
         run: nix develop -c sh -c './tests.sh'
