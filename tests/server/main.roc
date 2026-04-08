@@ -31,6 +31,7 @@ respond! = |request, _model|
         "/keyboard-select" -> Ok(html(keyboard_select_page))
         "/hover-test" -> Ok(html(hover_test_page))
         "/mouse-test" -> Ok(html(mouse_test_page))
+        "/file-upload" -> Ok(html(file_upload_page))
         _ -> Ok(not_found)
 
 html : Str -> Response
@@ -646,6 +647,22 @@ mouse_test_page =
                 document.getElementById('events').textContent = events.join(',');
             });
         </script>
+    </body>
+    </html>
+    """
+
+file_upload_page : Str
+file_upload_page =
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>File Upload Test</title>
+    </head>
+    <body>
+        <input type="file" id="single-file" accept=".zip,.txt">
+        <input type="file" id="any-file">
+        <input type="file" id="multi" multiple>
     </body>
     </html>
     """

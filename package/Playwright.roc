@@ -40,6 +40,9 @@ module
         uncheck!,
         tap!,
         fill!,
+        InputFiles,
+        FilePayload,
+        set_input_files!,
         key_type!,
         hover!,
         is_visible!,
@@ -64,6 +67,7 @@ module
 
 import json.Json
 import json.Option exposing [Option]
+import utils.Base64
 
 # Protocol message types for JSON decoding
 
@@ -258,6 +262,32 @@ FillParams : {
     selector : Str,
     value : Str,
     timeout : U64,
+}
+
+## What to set on a file input. Either file paths or in-memory buffers.
+InputFiles : [Paths (List Str), Buffers (List FilePayload)]
+
+## A file to upload from memory (no disk file needed).
+FilePayload : {
+    name : Str,
+    mime_type : Str,
+    buffer : List U8,
+}
+
+SetInputFilesPathsMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : { selector : Str, localPaths : List Str, timeout : U64 },
+    metadata : {},
+}
+
+SetInputFilesPayloadsMessage : {
+    id : U64,
+    guid : Str,
+    method : Str,
+    params : { selector : Str, payloads : List { name : Str, mimeType : Str, buffer : Str }, timeout : U64 },
+    metadata : {},
 }
 
 PressSequentiallyMessage : {
@@ -1363,6 +1393,59 @@ fill! = |page, selector, value|
 
         None ->
             Ok({})
+
+## Set files for a file input element. Accepts either file paths or in-memory buffers.
+##
+## ```
+## # From file paths
+## Playwright.set_input_files!(page, "#upload", Paths(["/tmp/test.zip"]))?
+##
+## # From in-memory buffers (no disk file needed)
+## Playwright.set_input_files!(page, "#upload", Buffers([{
+##     name: "test.zip",
+##     mime_type: "application/zip",
+##     buffer: List.repeat(0u8, 1024),
+## }]))?
+##
+## # Clear file input
+## Playwright.set_input_files!(page, "#upload", Paths([]))?
+## ```
+set_input_files! = |page, selector, input_files|
+    context = page.context
+    browser = context.browser
+    timeout = timeout_to_ms(browser.timeout)
+
+    # Empty list for either variant means "clear the file input".
+    # Playwright requires {payloads: []} for clearing (not {localPaths: []}).
+    send_result =
+        when input_files is
+            Paths(paths) if List.is_empty(paths) ->
+                msg : SetInputFilesPayloadsMessage
+                msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, payloads: [], timeout }, metadata: {} }
+                send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))
+
+            Paths(paths) ->
+                msg : SetInputFilesPathsMessage
+                msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, localPaths: paths, timeout }, metadata: {} }
+                send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))
+
+            Buffers(payloads) ->
+                wire_payloads = List.map(payloads, |p| {
+                    name: p.name,
+                    mimeType: p.mime_type,
+                    buffer: Base64.encode(p.buffer),
+                })
+                msg : SetInputFilesPayloadsMessage
+                msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, payloads: wire_payloads, timeout }, metadata: {} }
+                send_message!(browser.write_stdin!, Encode.to_bytes(msg, Json.utf8))
+
+    send_result?
+
+    response = read_until_response!(browser.read_stdout!, msg_id)?
+
+    when Option.get(response.error) is
+        Some(err) -> Err(SetInputFilesError(err.error.message))
+        None -> Ok({})
 
 ## Focus an element and type text character by character (keydown/keyup per char).
 ## See [key_type_targetless!] for the page-level variant.
