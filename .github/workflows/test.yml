@@ -28,5 +28,8 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v8
 
+      # Restart the daemon so it picks up the local cache substituter
+      - run: sudo systemctl restart nix-daemon
+
       - name: Run tests
         run: nix develop -c sh -c './tests.sh'
