@@ -28,7 +28,7 @@ jobs:
             narinfo-cache-negative-ttl = 0
             require-sigs = false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
 
       # Restart the daemon so it picks up the local cache substituter
       - run: sudo systemctl restart nix-daemon
