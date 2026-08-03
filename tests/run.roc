@@ -1,186 +1,185 @@
+## Playwright test-suite runner (invoked by ./tests.roc from the repo root):
+## spawns one node test server per worker, waits until they respond, then runs
+## every tests/**/*_test.roc through roc-spec.
+##
+## Optional args: a filename pattern (substring) and --fail-fast.
+## Optional env: ROC_SPEC_MAX_WORKERS (default 4).
 app [main!] {
-    pf: platform "https://github.com/growthagent/basic-cli/releases/download/0.27.0/G-A6F5ny0IYDx4hmF3t_YPHUSR28c9ZXMBnh0FEJjwk.tar.br",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.2.0/Cv22_pXKIt82Cz5qzFxdm47SNo81RDx6j4gahQIJvME.tar.br",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 }
 
-import pf.Arg
 import pf.Cmd
 import pf.Env
 import pf.Http
+import pf.OsStr exposing [OsStr]
+import pf.Path
 import pf.Sleep
+import pf.Stderr
 import pf.Stdout
+import pf.Url
+import pf.Utc
+import spec.Spec
+import spec.TestEnvironment
 
-import spec.Spec {
-    cmd_new: Cmd.new,
-    cmd_args: Cmd.args,
-    cmd_envs: Cmd.envs,
-    cmd_spawn_grouped!: Cmd.spawn_grouped!,
-    stdout_line!: Stdout.line!,
-    dir_list!: dir_list_as_strings!,
-    utc_now!: utc_now_as_millis!,
+effects = {
+    spawn_test!: |file, envs|
+        Cmd.new(OsStr.utf8("roc"))
+            .args_str(["--opt=speed", file])
+            .envs_str(envs)
+            .spawn_grouped!(),
+    poll!: Cmd.Child.poll!,
+    kill_wait!: Cmd.Child.kill_wait!,
+    list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
+    print!: Stdout.line!,
+    utc_now!: Utc.now!,
     sleep_millis!: Sleep.millis!,
 }
 
-import pf.Dir
-import pf.Path
-import pf.Utc
+base_port : U16
+base_port = 9000
 
-# Wrapper functions for roc-spec
-dir_list_as_strings! : Str => Result (List Str) _
-dir_list_as_strings! = |path|
-    paths = Dir.list!(path)?
-    Ok(List.map(paths, Path.display))
-
-utc_now_as_millis! : {} => I128
-utc_now_as_millis! = |{}|
-    Utc.to_millis_since_epoch(Utc.now!({}))
+## Environment for each test process: tests derive their server URL from
+## http://$ROC_SPEC_HOST:($ROC_SPEC_BASE_PORT + $WORKER_INDEX)
+worker_envs : U64 -> List((Str, Str))
+worker_envs = |index| [
+    ("WORKER_INDEX", index.to_str()),
+    ("ROC_SPEC_BASE_PORT", base_port.to_str()),
+    ("ROC_SPEC_HOST", "localhost"),
+]
 
 max_workers! : {} => U16
 max_workers! = |{}|
-    when Env.var!("ROC_SPEC_MAX_WORKERS") is
-        Ok(val) -> Str.to_u16(val) |> Result.with_default(4)
-        Err(_) -> 4
-
-default_base_port : U16
-default_base_port = 9000
-
-## Worker environment variables (pure function)
-get_worker_envs : U64 -> List (Str, Str)
-get_worker_envs = |worker_index|
-    [
-        ("WORKER_INDEX", Num.to_str(worker_index)),
-        ("ROC_SPEC_BASE_PORT", "9000"),
-        ("ROC_SPEC_HOST", "localhost"),
-    ]
-
-## No-op before_each hook (playwright tests don't need DB cleanup)
-before_each_noop! : U64 => Result {} []
-before_each_noop! = |_worker_index|
-    Ok({})
-
-server_binary_path = "./test-server"
-
-## Parse command line args into pattern and flags
-parse_args : List Arg.Arg -> { pattern : Str, fail_fast : Bool }
-parse_args = |args|
-    args_strs = args |> List.map(Arg.display) |> List.drop_first(1)
-    {
-        pattern: args_strs |> List.keep_if(|a| !Str.starts_with(a, "--")) |> List.first |> Result.with_default(""),
-        fail_fast: List.contains(args_strs, "--fail-fast"),
+    match Env.var_str!(OsStr.from_str("ROC_SPEC_MAX_WORKERS")) {
+        Ok(val) => U16.from_str(val).ok_or(4)
+        Err(_) => 4
     }
 
-main! : List Arg.Arg => Result {} _
-main! = |args|
+## Parse command line args into pattern and flags
+parse_args : List(Str) -> { pattern : Str, fail_fast : Bool }
+parse_args = |args| {
+    rest = args.drop_first(1)
+    pattern = rest.keep_if(|a| !a.starts_with("--")).first().ok_or("")
+    fail_fast = rest.contains("--fail-fast")
+    { pattern, fail_fast }
+}
+
+## The first tests/<group>/<name>_test.roc on disk. Every test file carries the
+## same dependency header, so whichever one comes back stands in for all of
+## them.
+first_test_file! : Str => Try(Str, [NoTestFiles])
+first_test_file! = |test_dir| {
+    groups = Path.list!(Path.utf8(test_dir)) ? |_| NoTestFiles
+    var $found = ""
+    for group in groups {
+        match Path.list!(group) {
+            Err(_) => {}
+            Ok(entries) => {
+                for entry in entries {
+                    name = Path.display(entry)
+                    if $found == "" and name.ends_with("_test.roc") {
+                        $found = name
+                    }
+                }
+            }
+        }
+    }
+    if $found == "" {
+        Err(NoTestFiles)
+    } else {
+        Ok($found)
+    }
+}
+
+## Download and extract every package the tests depend on, in one process,
+## before any worker starts.
+##
+## The compiler does not lock the package cache: the first `roc` to want a
+## missing package creates its cache directory and starts extracting into it,
+## while every other `roc` sees that directory, takes it for a finished
+## download, and dies with "PACKAGE DOWNLOAD FAILED ... FileNotFound". On a
+## cold cache that wipes out every test that loses the race.
+warm_package_cache! : Str => Try({}, _)
+warm_package_cache! = |test_dir|
+    match first_test_file!(test_dir) {
+        Err(_) => Ok({})
+        Ok(file) => {
+            Stdout.line!("Warming the package cache...")?
+            # Whatever this reports about the file itself is the test run's
+            # business, so the output and the exit code are both dropped here.
+            _ = Cmd.new(OsStr.utf8("roc")).args_str(["check", file]).exec_output!()
+            Ok({})
+        }
+    }
+
+## Spawn one node test server for the given worker index
+spawn_worker! : U16 => Try({}, _)
+spawn_worker! = |index| {
+    port = base_port + index
+    cmd = Cmd.envs_str(Cmd.args_str(Cmd.new_str("node"), ["tests/server/main.mjs"]), [("PORT", port.to_str())])
+    _child = Cmd.spawn_grouped!(cmd) ? |e| ServerSpawnFailed(index, e)
+    Ok({})
+}
+
+## One readiness probe against a worker's test server: any HTTP response
+## means it is up. A Tcp connect would be lighter, but it would only prove the
+## port is bound, not that the server is answering requests.
+check_worker! : U16 => Bool
+check_worker! = |port|
+    match Url.parse("http://localhost:${port.to_str()}") {
+        Err(_) => Bool.False
+        Ok(u) =>
+            match Http.get_utf8!(u) {
+                Ok(_) => Bool.True
+                Err(_) => Bool.False
+            }
+    }
+
+main! : List(OsStr) => Try({}, _)
+main! = |os_args| {
+    args = os_args.map(|a| OsStr.display(a))
     { pattern, fail_fast } = parse_args(args)
-    base_port = default_base_port
     workers = max_workers!({})
 
-    Stdout.line!("Starting $(Num.to_str(workers)) workers...")?
+    warm_package_cache!("tests")?
 
-    # Phase 1: Spawn all workers (using spawn_grouped! for proper cleanup)
-    List.range({ start: At(0), end: Before(workers) })
-        |> List.for_each_try!(|index|
-            spawn_worker!(base_port, index)
-        )?
+    Stdout.line!("Starting ${workers.to_str()} test servers...")?
 
-    # Phase 2: Wait for all workers to be ready
-    wait_for_all_workers!({
+    # Spawn all test servers first (spawn_grouped! so they die with the
+    # runner), then poll them all until every one answers (up to ~30s).
+    TestEnvironment.start!({ sleep!: Sleep.millis! }, {
         count: workers,
-        base_port,
+        spawn!: spawn_worker!,
+        ready!: |index| check_worker!(base_port + index),
         max_attempts: 150,
         delay_ms: 200,
     })?
 
-    Stdout.line!("All $(Num.to_str(workers)) workers ready")?
+    Stdout.line!("All ${workers.to_str()} test servers ready")?
 
-    # Run tests
-    results = Spec.run_filtered!("tests", {
+    results = Spec.run_filtered!(effects, "tests", {
         max_workers: workers,
-        worker_envs: get_worker_envs,
-        before_each!: before_each_noop!,
-        per_test_timeout_ms: 60000,
-        quiet: Bool.true,
+        worker_envs,
+        before_each!: |_index| Ok({}),
+        per_test_timeout_ms: 120_000,
+        quiet: Bool.True,
         fail_fast,
     }, pattern)?
 
-    # Report results
-    passed = List.count_if(results, |r| r.passed)
-    total = List.len(results)
+    passed = results.count_if(|r| r.passed)
+    total = results.len()
 
     Stdout.line!("")?
-    Stdout.line!("$(Num.to_str(passed))/$(Num.to_str(total)) tests passed")?
+    Stdout.line!("${passed.to_str()}/${total.to_str()} tests passed")?
 
-    if passed == total then
+    # A pattern that matches nothing is a failure: a typo'd filter must not
+    # produce a green "0/0 passed" run.
+    if total == 0 {
+        Stderr.line!("No tests matched the pattern '${pattern}'")?
+        Err(NoTestsMatched)
+    } else if passed == total {
         Ok({})
-    else
+    } else {
         Err(TestsFailed)
-
-## Spawn a single test server
-spawn_worker! : U16, U16 => Result {} _
-spawn_worker! = |base_port, index|
-    port = base_port + index
-
-    _ =
-        Cmd.new(server_binary_path)
-        |> Cmd.envs([
-            ("ROC_BASIC_WEBSERVER_PORT", Num.to_str(port)),
-        ])
-        |> Cmd.spawn_grouped!()
-        |> Result.map_err(|_| ServerSpawnFailed(index))?
-
-    Ok({})
-
-## Wait for all workers to be ready
-wait_for_all_workers! : { count : U16, base_port : U16, max_attempts : U64, delay_ms : U64 } => Result {} _
-wait_for_all_workers! = |config|
-    initial_ready = List.repeat(Bool.false, Num.to_u64(config.count))
-    poll_until_all_ready!(config, initial_ready, 0)
-
-poll_until_all_ready! : { count : U16, base_port : U16, max_attempts : U64, delay_ms : U64 }, List Bool, U64 => Result {} _
-poll_until_all_ready! = |config, ready_status, attempt|
-    if attempt >= config.max_attempts then
-        not_ready =
-            ready_status
-            |> List.map_with_index(|is_ready, idx| if is_ready then "" else Num.to_str(idx))
-            |> List.keep_if(|s| !Str.is_empty(s))
-            |> Str.join_with(", ")
-        Err(WorkersNotReady(not_ready))
-    else if List.all(ready_status, |r| r) then
-        Ok({})
-    else
-        new_ready = poll_all_workers!(config.base_port, ready_status, 0, [])
-
-        if List.all(new_ready, |r| r) then
-            Ok({})
-        else
-            _ = Sleep.millis!(config.delay_ms)
-            poll_until_all_ready!(config, new_ready, attempt + 1)
-
-poll_all_workers! : U16, List Bool, U64, List Bool => List Bool
-poll_all_workers! = |base_port, ready_status, idx, acc|
-    when List.get(ready_status, idx) is
-        Err(_) -> acc
-        Ok(is_ready) ->
-            new_status =
-                if is_ready then
-                    Bool.true
-                else
-                    check_worker_ready!(base_port, Num.to_u16(idx))
-            poll_all_workers!(base_port, ready_status, idx + 1, List.append(acc, new_status))
-
-check_worker_ready! : U16, U16 => Bool
-check_worker_ready! = |base_port, index|
-    port = base_port + index
-    url = "http://localhost:$(Num.to_str(port))/"
-
-    request = {
-        method: GET,
-        headers: [],
-        uri: url,
-        body: [],
-        timeout_ms: TimeoutMilliseconds(1000),
     }
-
-    when Http.send!(request) is
-        Ok(response) -> response.status < 500
-        Err(_) -> Bool.false
+}
