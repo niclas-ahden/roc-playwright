@@ -7,3 +7,6 @@
 .direnv/
 .envrc
 generated-docs/
+
+# Built by tests/leak/check.roc (the Windows name; the bare one is already ignored)
+tests/leak/leak-bin.exe

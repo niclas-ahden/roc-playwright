@@ -5,7 +5,7 @@
 ## Optional args: a filename pattern (substring) and --fail-fast.
 ## Optional env: ROC_SPEC_MAX_WORKERS (default 4).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
 }
 
@@ -27,7 +27,7 @@ effects = {
         Cmd.new(OsStr.utf8("roc"))
             .args_str(["--opt=speed", file])
             .envs_str(envs)
-            .spawn_grouped!(),
+            .spawn!(),
     poll!: Cmd.Child.poll!,
     kill_wait!: Cmd.Child.kill_wait!,
     list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
@@ -117,7 +117,7 @@ spawn_worker! : U16 => Try({}, _)
 spawn_worker! = |index| {
     port = base_port + index
     cmd = Cmd.envs_str(Cmd.args_str(Cmd.new_str("node"), ["tests/server/main.mjs"]), [("PORT", port.to_str())])
-    _child = Cmd.spawn_grouped!(cmd) ? |e| ServerSpawnFailed(index, e)
+    _child = Cmd.spawn!(cmd) ? |e| ServerSpawnFailed(index, e)
     Ok({})
 }
 
@@ -145,8 +145,10 @@ main! = |os_args| {
 
     Stdout.line!("Starting ${workers.to_str()} test servers...")?
 
-    # Spawn all test servers first (spawn_grouped! so they die with the
-    # runner), then poll them all until every one answers (up to ~30s).
+    # Spawn all test servers first, then poll them all until every one
+    # answers (up to ~30s). They need no leash from the platform: each one
+    # exits when its stdin pipe closes, which happens however the runner dies
+    # (see tests/server/main.mjs).
     TestEnvironment.start!({ sleep!: Sleep.millis! }, {
         count: workers,
         spawn!: spawn_worker!,

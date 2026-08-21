@@ -1,5 +1,5 @@
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.23.0/7NpDhuqoqGFedmVLvmm1zjq37GCmaFGzwr5sz4ch9wTK.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
     playwright: "../../package/main.roc",
     url: "https://github.com/niclas-ahden/roc-url/releases/download/0.6.1/95CwyLo97aKZ5twTy6VtkmmhF6MFKMr7hvPeMi6U7bAF.tar.zst",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
@@ -11,15 +11,6 @@ import pf.OsStr exposing [OsStr]
 import playwright.Playwright
 import url.Url
 import spec.TestEnvironment
-
-hooks = {
-    new: Cmd.new_str,
-    args: Cmd.args_str,
-    spawn_grouped!: Cmd.spawn_grouped!,
-    write_stdin!: Cmd.Child.write_stdin!,
-    read_stdout!: Cmd.Child.read_stdout!,
-    kill!: Cmd.Child.kill!,
-}
 
 ## The per-worker test-server URL, from the env the runner sets:
 ## http://$ROC_SPEC_HOST:($ROC_SPEC_BASE_PORT + $WORKER_INDEX)
@@ -42,7 +33,10 @@ worker_url! = |{}| {
 main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
-    { browser, page } = Playwright.launch_page_with!(hooks, { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] })?
+    { browser, page } = Playwright.launch_page_with!(
+        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+    )?
 
     Playwright.navigate!(page, Url.to_str(url))?
 

@@ -12,5 +12,118 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The package checks shared by every Roc package of ours: roc check, roc
+  # test, a bundle sanity check, and ./tests.roc under the flake's compiler.
   test:
     uses: niclas-ahden/roc-workflows/.github/workflows/test.yml@v2
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  # What a package that spawns processes has to prove per operating system:
+  # the suite passes, and nothing it started survives the program that
+  # started it. This takes the no-Nix route (a downloaded Roc nightly, npm's
+  # Playwright) because Nix has no Windows support, and because that is the
+  # route a user of the package is on.
+  platforms:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One red leg must never hide another's result.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    env:
+      # Keep in step with the flake's roc-src and the devShell's
+      # playwright-test (`nix develop -c playwright --version`).
+      ROC_TAG: nightly-2026-08-20-9e3980a
+      PLAYWRIGHT_VERSION: 1.61.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # One asset per system. Windows is the only system whose nightly ships
+      # as a zip rather than a tarball.
+      - name: Install the Roc nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64)   asset=linux_x86_64        ; archive=tar.gz ;;
+            Linux-ARM64) asset=linux_arm64         ; archive=tar.gz ;;
+            macOS-ARM64) asset=macos_apple_silicon ; archive=tar.gz ;;
+            macOS-X64)   asset=macos_x86_64        ; archive=tar.gz ;;
+            Windows-X64) asset=windows_x86_64      ; archive=zip    ;;
+            *)
+              echo "error: no roc nightly asset for $RUNNER_OS-$RUNNER_ARCH" >&2
+              exit 1
+              ;;
+          esac
+
+          url=$(gh release view "$ROC_TAG" --repo roc-lang/nightlies --json assets \
+                  -q ".assets[] | select(.name | test(\"$asset\")) | .url")
+          [ -n "$url" ] || { echo "error: no $asset asset on $ROC_TAG" >&2; exit 1; }
+
+          # RUNNER_TEMP is a backslash path on Windows, which neither this
+          # bash nor tar's -C reads as one. Forward slashes work in both, and
+          # in the PATH entry later steps inherit. A no-op everywhere else.
+          dest="${RUNNER_TEMP//\\//}/roc"
+          mkdir -p "$dest"
+
+          curl -sSL -o "roc_nightly.$archive" "$url"
+
+          # Both archives hold a single top-level directory. Do not reach for
+          # tar on the zip: a Windows runner's bash can resolve `tar` to
+          # MSYS's GNU tar, which cannot read a zip at all.
+          if [ "$archive" = zip ]; then
+            powershell -NoProfile -NonInteractive -Command \
+              "Expand-Archive -LiteralPath 'roc_nightly.zip' -DestinationPath 'roc_nightly_unzipped' -Force"
+            mv roc_nightly_unzipped/*/* "$dest"/
+            rm -rf roc_nightly_unzipped
+          else
+            tar -xzf "roc_nightly.$archive" --strip-components=1 -C "$dest"
+          fi
+          rm "roc_nightly.$archive"
+
+          [ -f "$dest/roc" ] || [ -f "$dest/roc.exe" ] || {
+            echo "error: no roc binary landed in $dest" >&2
+            ls -la "$dest" >&2
+            exit 1
+          }
+
+          echo "$dest" >> "$GITHUB_PATH"
+          "$dest"/roc --version
+
+      - name: Install Playwright and its browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g "playwright@$PLAYWRIGHT_VERSION"
+          if [ "$RUNNER_OS" = Linux ]; then
+            playwright install --with-deps chromium firefox webkit
+          else
+            playwright install chromium firefox webkit
+          fi
+          playwright --version
+
+      - name: Run the suite
+        shell: bash
+        run: roc tests.roc
+
+      # The runner started with no Playwright or node processes, so any
+      # alive now was left by the suite or the runner.
+      - name: The suite left nothing running
+        shell: bash
+        run: roc tests/leak/check.roc -- none
+
+      # Every browser, every way a program can end. A red step here means a
+      # user of the package is left with browsers running after their
+      # program is gone.
+      - name: Nothing outlives the program
+        shell: bash
+        run: roc tests/leak/check.roc

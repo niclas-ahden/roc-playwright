@@ -6,6 +6,15 @@ import http from "node:http";
 
 const port = Number(process.env.PORT ?? process.env.ROC_BASIC_WEBSERVER_PORT ?? "9000");
 
+// The runner spawns this server with stdin piped and never writes to it. When
+// the runner dies, however it dies (clean exit, Ctrl+C, kill -9, or
+// TerminateProcess), the OS closes its end and stdin reaches EOF here. Exit on
+// that rather than rely on the platform to take us down: a plain Cmd.spawn!
+// gives the child no leash, and this makes the server its own.
+process.stdin.on("end", () => process.exit(0));
+process.stdin.on("close", () => process.exit(0));
+process.stdin.resume();
+
 const home_page = `<!DOCTYPE html>
 <html>
 <head>

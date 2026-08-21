@@ -4,7 +4,7 @@
 ## hooks = {
 ##     new: Cmd.new_str,
 ##     args: Cmd.args_str,
-##     spawn_grouped!: Cmd.spawn_grouped!,
+##     spawn!: Cmd.spawn!,
 ##     write_stdin!: Cmd.Child.write_stdin!,
 ##     read_stdout!: Cmd.Child.read_stdout!,
 ##     kill!: Cmd.Child.kill!,
@@ -31,12 +31,25 @@ Playwright :: [].{
 	## hooks = {
 	##     new: Cmd.new_str,
 	##     args: Cmd.args_str,
-	##     spawn_grouped!: Cmd.spawn_grouped!,
+	##     spawn!: Cmd.spawn!,
 	##     write_stdin!: Cmd.Child.write_stdin!,
 	##     read_stdout!: Cmd.Child.read_stdout!,
 	##     kill!: Cmd.Child.kill!,
 	## }
 	## ```
+	##
+	## `driver` names the Playwright CLI to spawn, and defaults to `playwright`
+	## — what an install puts on PATH. Set it only when yours lives somewhere a
+	## PATH lookup will not find it. It belongs here rather than in
+	## [LaunchOptions] because it describes the installation, not the browser
+	## session: every launch in a program goes through one Playwright, so a
+	## per-launch setting could only ever drift between two launches that meant
+	## to share it.
+	##
+	## Because the field carries a default, a hooks record written inline at the
+	## call — as the examples here and in the tests do — may leave it out. A
+	## record bound to a name first is a committed argument by then, and has to
+	## either spell the field or carry a `PlatformHooks` annotation.
 	##
 	## `cmd` and `child` are whatever the platform's command and child-process
 	## types are. `err` is its I/O error type. All three stay generic so the
@@ -47,10 +60,11 @@ Playwright :: [].{
 	PlatformHooks(cmd, child, err) : {
 		new : Str -> cmd,
 		args : cmd, List(Str) -> cmd,
-		spawn_grouped! : cmd => Try(child, err),
+		spawn! : cmd => Try(child, err),
 		write_stdin! : child, List(U8) => Try({}, err),
 		read_stdout! : child, U64 => Try(List(U8), err),
 		kill! : child => Try({}, err),
+		driver : Str ?? "playwright",
 	}
 
 	## A running browser, returned by [launch!]. The three closures are built
@@ -80,11 +94,14 @@ Playwright :: [].{
 		frame_guid : Str,
 	}
 
-	## Ways [launch!] and [launch_with!] can fail. `PlaywrightNotFound` carries
-	## an install hint. `SpawnFailed` wraps the platform's own spawn error.
+	## Ways [launch!] and [launch_with!] can fail. `CouldNotStartDriver` means the
+	## driver process would not start, and carries why plus what to do about it;
+	## it is deliberately not named for one cause, since a missing binary and an
+	## unrunnable one both land here. `SpawnFailed` wraps the platform's own
+	## spawn error.
 	## `BrowserLaunchFailed` carries the driver's error message.
 	LaunchError(spawn, e) : [
-		PlaywrightNotFound(Str),
+		CouldNotStartDriver(Str),
 		SpawnFailed(spawn),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
@@ -94,7 +111,7 @@ Playwright :: [].{
 	## Ways [launch_page!] and [launch_page_with!] can fail: everything in
 	## [LaunchError] plus the context and page creation steps.
 	LaunchPageError(spawn, e) : [
-		PlaywrightNotFound(Str),
+		CouldNotStartDriver(Str),
 		SpawnFailed(spawn),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
@@ -323,23 +340,51 @@ Playwright :: [].{
 		# need parens anyway: `(hooks.new)(...)`.)
 		cmd_new = hooks.new
 		cmd_args = hooks.args
-		spawn_grouped! = hooks.spawn_grouped!
+		spawn! = hooks.spawn!
 		hooks_write! = hooks.write_stdin!
 		hooks_read! = hooks.read_stdout!
 		hooks_kill! = hooks.kill!
+		driver = hooks.driver
 
-		playwright_cmd = "playwright"
-		spawn_try = spawn_grouped!(cmd_args(cmd_new(playwright_cmd), ["run-driver"]))
-		child = match spawn_try {
+		spawn_driver! = |name| spawn!(cmd_args(cmd_new(name), ["run-driver"]))
+
+		# npm installs the CLI as `<name>.cmd` on Windows and never as an
+		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
+		# a bare name resolves on Unix and nowhere else. Try the shim second
+		# rather than ask the caller which system it is on: on Unix the first
+		# spawn succeeds and this costs nothing.
+		shim = "${driver}.cmd"
+		child = match spawn_driver!(driver) {
 			Ok(c) => Ok(c)
-			Err(SpawnFailed(_)) =>
-				Err(
-					PlaywrightNotFound(
-						\\Could not find '${playwright_cmd}' command. Make sure Playwright is installed and available in your PATH.
-						\\If using Nix, add 'pkgs.playwright-test' to your devShell.
-						,
-					),
-				)
+			Err(SpawnFailed(why)) =>
+				match spawn_driver!(shim) {
+					Ok(c) => Ok(c)
+
+					# Report why the FIRST attempt failed, not the shim's. Off
+					# Windows the shim was never going to exist, so its
+					# NotFound would bury the real cause. And the cause is the
+					# whole message: `NotFound` means install it or point
+					# `driver` at it, while `PermissionDenied` means it is
+					# already there and telling someone to install it sends
+					# them after the wrong thing.
+					Err(SpawnFailed(_)) =>
+						Err(
+							CouldNotStartDriver(
+								\\Could not spawn '${driver}': ${Str.inspect(why)}
+								\\
+								\\If it is not installed: `npm install -g playwright`, or add
+								\\'pkgs.playwright-test' to your Nix devShell. If it is installed
+								\\somewhere a PATH lookup will not find: set `driver` on the hooks
+								\\record you pass to launch.
+								\\
+								\\('${shim}', the name npm installs on Windows, failed too.)
+								,
+							),
+						)
+
+					Err(other) => Err(other)
+				}
+
 			Err(other) => Err(other)
 		}?
 
@@ -1182,8 +1227,30 @@ Playwright :: [].{
 	## ```
 	close! : Browser(err) => Try({}, [CloseFailed(Str), ..e])
 	close! = |browser| {
-		# Kill the driver process, which terminates the browser.
-		# No need to send a close message first - the driver is designed to be terminated.
+		write_child! = browser.write_stdin!
+		read_child! = browser.read_stdout!
+
+		# Ask the driver to close the browser, and wait for it to say it did.
+		# Killing the driver alone is not enough: it leaves the browser to
+		# notice its pipe closing (Chromium's --remote-debugging-pipe,
+		# Firefox's juggler pipe, WebKit's inspector pipe), which Chromium's
+		# headless shell does and its full build does not. A full Chromium
+		# then outlives the program that launched it. Closing through the
+		# driver is what makes the browser go away for every build, because
+		# the driver terminates the process itself.
+		#
+		# Failures here are deliberately dropped: if the driver is already
+		# gone there is nothing to close, and the kill below is the answer
+		# either way.
+		close_msg : SimpleMessage
+		close_msg = { id: msg_id, guid: browser.browser_guid, method: "close", params: {}, metadata: {} }
+		_ = send_message!(write_child!, Str.to_utf8(Json.to_str(close_msg)))
+		_ = read_until_response!(read_child!, msg_id)
+
+		# Then take the driver down. A program that never reaches close! is
+		# covered by the same driver: `run-driver` exits on stdin EOF and
+		# takes its browsers with it, so a plain `Cmd.spawn!` is leash
+		# enough. tests/leak/ checks both routes on every OS.
 		#
 		# The platform error is carried as a Str rather than as the error value
 		# itself. Returning CloseFailed(err) makes the app's error union contain
