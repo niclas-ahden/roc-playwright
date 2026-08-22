@@ -6,8 +6,8 @@ Browser automation in Roc using Playwright. We communicate with Playwright using
 
 ```roc
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-    playwright: "../roc-playwright/package/main.roc",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/EBvLYFMoGzZyXLBz5f8fonBbfgp5QhXDaRMULKKX5tJo.tar.zst",
 }
 
 import pf.Cmd
@@ -16,22 +16,26 @@ import playwright.Playwright exposing [assert!]
 
 main! : List(OsStr) => Try({}, _)
 main! = |_args| {
-    # The record wires the package to the host platform's process-spawning
-    # API, here basic-cli's Cmd module. Everything after launch goes through
-    # the returned browser and page.
-    { browser, page } = Playwright.launch_page!({ new: Cmd.new_str, spawn!: Cmd.spawn! }, Chromium(DefaultChannel))?
+	# The record wires the package to the host platform's process-spawning
+	# API, here basic-cli's Cmd module. Everything after launch goes through
+	# the returned browser and page.
+	{ browser, page } =
+		Playwright.launch_page!(
+			{ new: Cmd.new_str, spawn!: Cmd.spawn! },
+			Chromium(DefaultChannel),
+		)?
 
-    page.navigate!("https://example.com")?
+	page.navigate!("https://example.com")?
 
-    # Claims re-check the page until they hold or the timeout expires, like
-    # every official Playwright client's assertions.
-    assert!(page.has_title("Example Domain"))?
-    assert!(page.find("h1").has_text("Example Domain"))?
-    assert!(page.find_all("p a").is_not_empty())?
+	# Claims re-check the page until they hold or the timeout expires, like
+	# every official Playwright client's assertions.
+	assert!(page.has_title("Example Domain"))?
+	assert!(page.find("h1").has_text("Example Domain"))?
+	assert!(page.find_all("p a").is_not_empty())?
 
-    page.find("a").click!()?
+	page.find("a").click!()?
 
-    browser.close!()
+	browser.close!()
 }
 ```
 
