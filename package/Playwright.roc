@@ -87,8 +87,8 @@ Playwright :: [].{
 		##
 		## Strict, like Playwright's locators: if the selector turns out to
 		## match more than one element, actions and assertions on it fail
-		## instead of silently picking the first match. Use [find_all] when
-		## several matches are expected.
+		## instead of silently picking the first match. Use [Page.find_all]
+		## when several matches are expected.
 		##
 		## ```
 		## page.find("#username").fill!("alice")?
@@ -148,7 +148,7 @@ Playwright :: [].{
 
 		## The document title matches the regular expression, which may be
 		## found anywhere in the title: anchor with `^` and `$` to claim all
-		## of it. An invalid pattern fails immediately with [ExpectError].
+		## of it. An invalid pattern fails immediately with `ExpectError`.
 		title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
 		title_matches = |page, regex| Claim.{
 			run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.False, |r| match r {
@@ -205,7 +205,7 @@ Playwright :: [].{
 		## The usual claim when the URL carries a generated id:
 		## `url_matches("/orders/\\d+")` accepts any order page but not the
 		## order index. An invalid pattern fails immediately with
-		## [ExpectError].
+		## `ExpectError`.
 		url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
 		url_matches = |page, regex| Claim.{
 			run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.False, |r| match r {
@@ -341,12 +341,12 @@ Playwright :: [].{
 		## found anywhere in the text: anchor with `^` and `$` to claim all
 		## of it. For genuinely dynamic content, like counters or generated
 		## ids: `matches_text("Synced \\d+ seconds ago")`. Fixed text reads
-		## better through [has_text] or [contains_text], which take their
-		## argument literally.
+		## better through [Element.has_text] or [Element.contains_text], which
+		## take their argument literally.
 		##
 		## The text is matched raw, without the whitespace normalization
-		## [has_text] applies, like the quantified text claims. An invalid
-		## pattern fails immediately with [ExpectError].
+		## [Element.has_text] applies, like the quantified text claims. An
+		## invalid pattern fails immediately with `ExpectError`.
 		matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
 		matches_text = |el, regex| Claim.{
 			run!: |t| {
@@ -468,7 +468,7 @@ Playwright :: [].{
 		}
 
 		## The element exists in the DOM, visible or not, like Playwright's
-		## `toBeAttached`. [is_visible] makes the stronger claim.
+		## `toBeAttached`. [Element.is_visible] makes the stronger claim.
 		exists : Element(AssertError(e)) -> Claim(AssertError(e))
 		exists = |el| Claim.{
 			run!: |t| {
@@ -479,10 +479,10 @@ Playwright :: [].{
 		}
 
 		## No element matches the selector at all. The strictest absence
-		## claim: [is_hidden] also passes on an element that is present but
-		## invisible, this one does not. Like every single-element claim, a
-		## selector matching more than one element is a strict mode violation
-		## and fails with [ExpectError] rather than [AssertionFailed].
+		## claim: [Element.is_hidden] also passes on an element that is
+		## present but invisible, this one does not. Like every single-element
+		## claim, a selector matching more than one element is a strict mode
+		## violation and fails with `ExpectError` rather than `AssertionFailed`.
 		not_exists : Element(AssertError(e)) -> Claim(AssertError(e))
 		not_exists = |el| Claim.{
 			run!: |t| {
@@ -517,7 +517,7 @@ Playwright :: [].{
 			},
 		}
 
-		## The checkbox or radio button is checked. Fails with [ExpectError]
+		## The checkbox or radio button is checked. Fails with `ExpectError`
 		## on an element that is neither.
 		is_checked : Element(AssertError(e)) -> Claim(AssertError(e))
 		is_checked = |el| Claim.{
@@ -615,8 +615,9 @@ Playwright :: [].{
 		}
 
 		## Exactly these texts, in document order, each after normalizing
-		## whitespace. The count must match too, so this subsumes [has_count].
-		## Playwright's `toHaveText` with an array argument means the same thing.
+		## whitespace. The count must match too, so this subsumes
+		## [Elements.has_count]. Playwright's `toHaveText` with an array
+		## argument means the same thing.
 		has_texts : Elements(AssertError(e)), List(Str) -> Claim(AssertError(e))
 		has_texts = |els, want| Claim.{
 			run!: |t| {
@@ -641,14 +642,14 @@ Playwright :: [].{
 		## families read live DOM properties no selector engine can see, so
 		## they stay one-shot: the claim is judged against the matches as
 		## they are at call time, and the page should be settled first, e.g.
-		## by asserting [has_count] before one of them.
+		## by asserting [Elements.has_count] before one of them.
 		##
 		## An empty set fails `all_` and `any_` claims rather than passing
 		## vacuously: the usual reason a set is empty is a selector typo, and
 		## silently passing is the worst thing a test can do. `none_` claims
 		## pass on an empty set, because nothing matching is the strongest
-		## form of the claimed absence. Pair one with [is_not_empty] when the
-		## matches must exist too. The non-vacuity makes `all_` two
+		## form of the claimed absence. Pair one with [Elements.is_not_empty]
+		## when the matches must exist too. The non-vacuity makes `all_` two
 		## sequential retried checks, so a claim that never holds can take up
 		## to two timeouts to fail.
 
@@ -1821,7 +1822,7 @@ Playwright :: [].{
 	## Options for [assert_with!]. Every field carries a default, so a call
 	## spells only what it changes, the way [LaunchOptions] describes.
 	##
-	## `label` is prepended to [AssertionFailed]'s message, naming the intent
+	## `label` is prepended to `AssertionFailed`'s message, naming the intent
 	## a bare selector cannot: with several asserts on one selector in a test,
 	## `label: "listener detached"` says which claim failed and why it
 	## matters.
