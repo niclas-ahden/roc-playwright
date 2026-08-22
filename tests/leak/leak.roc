@@ -11,7 +11,7 @@
 ## the one that does not exit when its pipe to the driver closes, so it is the
 ## one that catches a cleanup route that only works by accident.
 ##
-## * `exit`: Playwright.close! then a normal return.
+## * `exit`: browser.close!() then a normal return.
 ## * `abandon`: a normal return without close!, so only stdin EOF tells the
 ##   driver the program is gone.
 ## * `hang`: sleep forever, for the caller to kill (Ctrl+C, kill -9,
@@ -50,17 +50,17 @@ main! = |os_args| {
     # Plain Cmd.spawn!, on purpose: the package must not need a leash from
     # the platform for its processes to follow the program down.
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         browser_type,
     )?
-    Playwright.navigate!(page, "about:blank")?
+    page.navigate!("about:blank")?
 
     # check.roc waits for this line before it acts, so the browser is really
     # up when the process goes down.
     Stdout.line!("READY")?
 
     match mode {
-        Exit => Playwright.close!(browser)
+        Exit => browser.close!()
         Abandon => Ok({})
         Hang => hang!({})
     }

@@ -35,14 +35,14 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
     # get_title! on page without <title> tag returns empty string
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["no-title"]).ok_or(url)))?
-    title = Playwright.get_title!(page)?
+    page.navigate!(Url.to_str(Url.append_path(url, ["no-title"]).ok_or(url)))?
+    title = page.get_title!()?
     Assert.eq(title, "") ? |e| NoTitleReturnsEmpty(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

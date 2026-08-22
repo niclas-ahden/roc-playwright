@@ -35,30 +35,30 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["keyboard-navigation"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["keyboard-navigation"]).ok_or(url)))?
 
     # Verify initial state - Item 1 is selected
-    initial = Playwright.text_content!(page, "#selected")?
+    initial = page.text_content!("#selected")?
     Assert.eq(initial, "Selected: Item 1") ? |e| InitialItemShouldBeSelected(e)
 
     # Press ArrowDown to select Item 2
-    Playwright.key_press_targetless!(page, ArrowDown, [])?
-    after_down = Playwright.text_content!(page, "#selected")?
+    page.key_press_targetless!(ArrowDown, [])?
+    after_down = page.text_content!("#selected")?
     Assert.eq(after_down, "Selected: Item 2") ? |e| Item2ShouldBeSelected(e)
 
     # Press ArrowDown again to select Item 3
-    Playwright.key_press_targetless!(page, ArrowDown, [])?
-    after_down2 = Playwright.text_content!(page, "#selected")?
+    page.key_press_targetless!(ArrowDown, [])?
+    after_down2 = page.text_content!("#selected")?
     Assert.eq(after_down2, "Selected: Item 3") ? |e| Item3ShouldBeSelected(e)
 
     # Press ArrowUp to go back to Item 2
-    Playwright.key_press_targetless!(page, ArrowUp, [])?
-    after_up = Playwright.text_content!(page, "#selected")?
+    page.key_press_targetless!(ArrowUp, [])?
+    after_up = page.text_content!("#selected")?
     Assert.eq(after_up, "Selected: Item 2") ? |e| BackToItem2(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

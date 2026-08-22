@@ -35,31 +35,31 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
 
     # Set a file
-    Playwright.set_input_files!(page, "#any-file", Buffers([{
+    page.set_input_files!("#any-file", Buffers([{
         name: "will_be_cleared.zip",
         mime_type: "application/zip",
         buffer: List.repeat(0.U8, 100),
     }]))?
 
-    count_before = Playwright.evaluate!(page, "String(document.querySelector('#any-file').files.length)")?
+    count_before = page.evaluate!("String(document.querySelector('#any-file').files.length)")?
     Assert.eq(count_before, "1") ? |_| FileNotSetInitially(count_before)
 
     # Clear
     # Annotated so the unused Buffers payload type doesn't stay unresolved
     clear_files : Playwright.InputFiles
     clear_files = Paths([])
-    Playwright.set_input_files!(page, "#any-file", clear_files)?
+    page.set_input_files!("#any-file", clear_files)?
 
-    count_after = Playwright.evaluate!(page, "String(document.querySelector('#any-file').files.length)")?
+    count_after = page.evaluate!("String(document.querySelector('#any-file').files.length)")?
     Assert.eq(count_after, "0") ? |_| ClearFailed(count_after)
 
-    Playwright.close!(browser)?
+    browser.close!()?
 
     Ok({})
 }

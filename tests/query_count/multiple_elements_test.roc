@@ -35,15 +35,15 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
 
-    Playwright.navigate!(page, Url.to_str(url))?
+    page.navigate!(Url.to_str(url))?
 
     # Home page has 5 nav links
-    link_count = Playwright.query_count!(page, "nav a")?
+    link_count = page.query_count!("nav a")?
     Assert.eq(link_count, 5) ? |e| NavLinkCount(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

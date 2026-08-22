@@ -38,31 +38,31 @@ main! = |_args| {
 
     # Launch with 5 second timeout - element appears after 500ms, so this should succeed
     { browser: browser1, page: page1 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page1, Url.to_str(Url.append_path(url, ["delayed-element"]).ok_or(url)))?
+    page1.navigate!(Url.to_str(Url.append_path(url, ["delayed-element"]).ok_or(url)))?
 
     # This should succeed because 5000ms > 500ms delay
-    delayed_text = Playwright.text_content!(page1, "#delayed")?
+    delayed_text = page1.text_content!("#delayed")?
     Assert.eq(delayed_text, "I appeared!") ? |e| DelayedElementFound(e)
 
-    Playwright.close!(browser1)?
+    browser1.close!()?
 
     # --- Failure case: timeout expires before element appears ---
 
     # Launch with 100ms timeout - element appears after 500ms, so this should fail
     { browser: browser2, page: page2 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(100), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(100) },
     )?
 
-    Playwright.navigate!(page2, Url.to_str(Url.append_path(url, ["delayed-element"]).ok_or(url)))?
+    page2.navigate!(Url.to_str(Url.append_path(url, ["delayed-element"]).ok_or(url)))?
 
     # This should fail because 100ms < 500ms delay
-    timeout_result = Playwright.text_content!(page2, "#delayed")
+    timeout_result = page2.text_content!("#delayed")
     _ = Assert.err(timeout_result) ? |e| TimeoutBeforeElementAppears(e)
 
-    Playwright.close!(browser2)
+    browser2.close!()
 }

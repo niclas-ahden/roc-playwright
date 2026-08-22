@@ -36,50 +36,50 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["escapes-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["escapes-test"]).ok_or(url)))?
 
-    quoted = Playwright.text_content!(page, "#quoted")?
+    quoted = page.text_content!("#quoted")?
     Assert.eq(quoted, "He said \"hi\"") ? |e| QuotesShouldSurviveTextContent(e)
 
-    backslash = Playwright.text_content!(page, "#backslash")?
+    backslash = page.text_content!("#backslash")?
     Assert.eq(backslash, "C:\\Users\\test") ? |e| BackslashesShouldSurvive(e)
 
-    multiline = Playwright.text_content!(page, "#multiline")?
+    multiline = page.text_content!("#multiline")?
     Assert.eq(multiline, "line one\nline two") ? |e| NewlinesShouldSurvive(e)
 
-    unicode = Playwright.text_content!(page, "#unicode")?
+    unicode = page.text_content!("#unicode")?
     Assert.eq(unicode, "café · naïve · 日本語") ? |e| UnicodeShouldSurvive(e)
 
     # The title carries quotes too.
-    title = Playwright.get_title!(page)?
+    title = page.get_title!()?
     Assert.eq(title, "He said \"hi\"") ? |e| QuotesShouldSurviveTitle(e)
 
     # ...as does an input value.
-    value = Playwright.input_value!(page, "#quoted-input")?
+    value = page.input_value!("#quoted-input")?
     Assert.eq(value, "a \"quoted\" value") ? |e| QuotesShouldSurviveInputValue(e)
 
     # ...and an attribute.
-    href = Playwright.get_attribute!(page, "#link", "href")?
+    href = page.get_attribute!("#link", "href")?
     Assert.eq(href, "/path?q=\"x\"&r=y") ? |e| QuotesShouldSurviveAttribute(e)
 
     # ...and an evaluate! result, including a tab.
-    tabbed = Playwright.evaluate!(page, "'a' + String.fromCharCode(9) + 'b'")?
+    tabbed = page.evaluate!("'a' + String.fromCharCode(9) + 'b'")?
     Assert.eq(tabbed, "a\tb") ? |e| TabsShouldSurviveEvaluate(e)
 
     # Values whose *content* mimics the wire format's serialized-string ("s":)
     # and null ("v":) markers must not be misrouted by the response decoder,
     # e.g. read as null or fail to decode.
-    json_text = Playwright.text_content!(page, "#json-content")?
+    json_text = page.text_content!("#json-content")?
     Assert.eq(json_text, "{\"s\": \"sniff\", \"v\": \"bait\"}") ? |e| JsonTextShouldNotConfuseDecoder(e)
 
-    json_attr = Playwright.get_attribute!(page, "#json-attr", "data-state")?
+    json_attr = page.get_attribute!("#json-attr", "data-state")?
     Assert.eq(json_attr, "{\"s\": \"sniff\", \"v\": \"bait\"}") ? |e| JsonAttrShouldNotConfuseDecoder(e)
 
-    json_eval = Playwright.evaluate!(page, "JSON.stringify({s: 1, v: 2})")?
+    json_eval = page.evaluate!("JSON.stringify({s: 1, v: 2})")?
     Assert.eq(json_eval, "{\"s\":1,\"v\":2}") ? |e| JsonEvalShouldNotConfuseDecoder(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

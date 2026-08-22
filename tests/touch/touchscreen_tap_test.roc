@@ -36,27 +36,27 @@ main! = |_args| {
     url = worker_url!({})
     # Launch with touch enabled
     browser = Playwright.launch_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
-    context = Playwright.new_context_with!(browser, { has_touch: Bool.True, permissions: [] })?
-    page = Playwright.new_page!(context)?
+    context = browser.new_context_with!({ has_touch: Bool.True })?
+    page = context.new_page!()?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["touch-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["touch-test"]).ok_or(url)))?
 
     # Verify initial state
-    initial_text = Playwright.text_content!(page, "#touch-result")?
+    initial_text = page.text_content!("#touch-result")?
     Assert.eq(initial_text, "No touch yet") ? |_| WrongInitialState(initial_text)
 
     # Tap in the center of the touch area (300x200 element)
-    box = Playwright.bounding_box!(page, "#touch-area")?
+    box = page.bounding_box!("#touch-area")?
     center_x = box.x + (box.width / 2.0)
     center_y = box.y + (box.height / 2.0)
-    Playwright.touchscreen_tap!(page, center_x, center_y)?
+    page.touchscreen_tap!(center_x, center_y)?
 
     # The tap triggers touch events then a click. The click handler writes
     # "Clicked at: X, Y" with the actual coordinates.
-    result_text = Playwright.text_content!(page, "#touch-result")?
+    result_text = page.text_content!("#touch-result")?
     Assert.true(Str.starts_with(result_text, "Clicked at:")) ? |_| WrongResultFormat(result_text)
 
     # Verify coordinates are reasonable (should be near the center of the 300x200 area)
@@ -65,5 +65,5 @@ main! = |_args| {
     coords = result_text.drop_prefix("Clicked at: ")
     Assert.true(Str.contains(coords, ",")) ? |_| MissingCommaInCoords(coords)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

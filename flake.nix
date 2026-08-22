@@ -9,9 +9,9 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    # The revision behind the ROC_TAG nightly that .github/workflows/test.yml
-    # installs. Move the two together: a compiler only this flake builds is a
-    # compiler only one CI job ever runs.
+    # The revision behind the PINNED_ROC_TAG nightly that
+    # .github/workflows/suite.yml installs. Move the two together: a compiler
+    # only this flake builds is a compiler only one CI job ever runs.
     roc-src = {
       url = "github:roc-lang/roc/9e3980a1b9432589b4073e2b20abb04877bc7b05";
       flake = false;

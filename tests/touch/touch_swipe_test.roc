@@ -36,30 +36,25 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         {
-            browser_type: Chromium(DefaultChannel),
-            headless: Bool.True,
             timeout: TimeoutMilliseconds(10000),
-            args: [],
             has_touch: Bool.True,
-            permissions: [],
         },
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["scroll-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["scroll-test"]).ok_or(url)))?
 
-    before = Playwright.text_content!(page, "#pointer-events")?
+    before = page.text_content!("#pointer-events")?
     Assert.eq(before, "none") ? |e| ShouldStartWithNoPointerEvents(e)
 
     # Horizontal swipe inside #pointer-area, which sets touch-action: none so
     # the browser does not claim the gesture for scrolling.
-    Playwright.touch_swipe!(page, { start_x: 300.0, start_y: 200.0, end_x: 100.0, end_y: 200.0 })?
+    page.touch_swipe!({ start_x: 300.0, start_y: 200.0, end_x: 100.0, end_y: 200.0 })?
 
-    seen = Playwright.evaluate!(
-        page,
+    seen = page.evaluate!(
         "new Promise(r => requestAnimationFrame(() => r(document.querySelector('#pointer-events').textContent)))",
     )?
     Assert.eq(Str.contains(seen, "pointerdown"), Bool.True) ? |e| SwipeShouldFireTouchPointerDown(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

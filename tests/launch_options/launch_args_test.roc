@@ -44,45 +44,39 @@ main! = |_args| {
     # `Chromium(Full)` also exercises the channel launch path (a `launch`
     # message that carries a `channel` field).
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         {
             browser_type: Chromium(Full),
-            headless: Bool.True,
             timeout: TimeoutMilliseconds(10000),
             args: ["--user-agent=roc-playwright-args-test"],
-            has_touch: Bool.False,
             permissions: ["microphone"],
         },
     )?
 
-    Playwright.navigate!(page, Url.to_str(url))?
+    page.navigate!(Url.to_str(url))?
 
-    user_agent = Playwright.evaluate!(page, "navigator.userAgent")?
+    user_agent = page.evaluate!("navigator.userAgent")?
     Assert.eq(user_agent, "roc-playwright-args-test") ? |e| UserAgent(e)
 
-    mic_state = Playwright.evaluate!(page, mic_permission_js)?
+    mic_state = page.evaluate!(mic_permission_js)?
     Assert.eq(mic_state, "granted") ? |e| MicrophoneGranted(e)
 
-    Playwright.close!(browser)?
+    browser.close!()?
 
     # Without the grant, the same query is not "granted", confirming the
     # state above came from our `permissions` option rather than a default.
     { browser: browser2, page: page2 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         {
             browser_type: Chromium(Full),
-            headless: Bool.True,
             timeout: TimeoutMilliseconds(10000),
-            args: [],
-            has_touch: Bool.False,
-            permissions: [],
         },
     )?
 
-    Playwright.navigate!(page2, Url.to_str(url))?
+    page2.navigate!(Url.to_str(url))?
 
-    default_state = Playwright.evaluate!(page2, mic_permission_js)?
+    default_state = page2.evaluate!(mic_permission_js)?
     Assert.not_eq(default_state, "granted") ? |e| MicrophoneNotGrantedByDefault(e)
 
-    Playwright.close!(browser2)
+    browser2.close!()
 }

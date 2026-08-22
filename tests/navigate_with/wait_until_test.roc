@@ -35,35 +35,35 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
     # Test navigate_with! using Load (default behavior)
-    Playwright.navigate_with!(page, { url: Url.to_str(url), wait_until: Load })?
-    h1_load = Playwright.text_content!(page, "h1")?
+    page.navigate_with!({ url: Url.to_str(url), wait_until: Load })?
+    h1_load = page.text_content!("h1")?
     Assert.eq(h1_load, "Welcome to the Test Server") ? |e| LoadWaitUntil(e)
 
     # Test navigate_with! using DomContentLoaded (faster, doesn't wait for images/stylesheets)
-    Playwright.navigate_with!(page, { url: Url.to_str(Url.append_path(url, ["page1"]).ok_or(url)), wait_until: DomContentLoaded })?
-    h1_dom = Playwright.text_content!(page, "h1")?
+    page.navigate_with!({ url: Url.to_str(Url.append_path(url, ["page1"]).ok_or(url)), wait_until: DomContentLoaded })?
+    h1_dom = page.text_content!("h1")?
     Assert.eq(h1_dom, "Page 1") ? |e| DomContentLoadedWaitUntil(e)
 
     # Test navigate_with! using Commit (fastest, just waits for response)
-    Playwright.navigate_with!(page, { url: Url.to_str(Url.append_path(url, ["page2"]).ok_or(url)), wait_until: Commit })?
-    h1_commit = Playwright.text_content!(page, "h1")?
+    page.navigate_with!({ url: Url.to_str(Url.append_path(url, ["page2"]).ok_or(url)), wait_until: Commit })?
+    h1_commit = page.text_content!("h1")?
     Assert.eq(h1_commit, "Page 2") ? |e| CommitWaitUntil(e)
 
     # Test navigate_with! using NetworkIdle (waits for no network activity)
-    Playwright.navigate_with!(page, { url: Url.to_str(url), wait_until: NetworkIdle })?
-    h1_idle = Playwright.text_content!(page, "h1")?
+    page.navigate_with!({ url: Url.to_str(url), wait_until: NetworkIdle })?
+    h1_idle = page.text_content!("h1")?
     Assert.eq(h1_idle, "Welcome to the Test Server") ? |e| NetworkIdleWaitUntil(e)
 
     # --- Error cases ---
 
     # navigate_with! to unreachable URL should error
-    unreachable_result = Playwright.navigate_with!(page, { url: "http://localhost:99999/nonexistent", wait_until: Load })
+    unreachable_result = page.navigate_with!({ url: "http://localhost:99999/nonexistent", wait_until: Load })
     _ = Assert.err(unreachable_result) ? |e| UnreachableUrl(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

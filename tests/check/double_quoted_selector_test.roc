@@ -36,23 +36,23 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["checkbox-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["checkbox-test"]).ok_or(url)))?
 
-    Playwright.check!(page, "input[type=\"checkbox\"]")?
-    first = Playwright.evaluate!(page, "String(document.querySelector('#plain').checked)")?
+    page.check!("input[type=\"checkbox\"]")?
+    first = page.evaluate!("String(document.querySelector('#plain').checked)")?
     Assert.eq(first, "true") ? |e| DoubleQuotedSelectorShouldCheck(e)
 
-    Playwright.uncheck!(page, "input[type=\"checkbox\"]")?
-    after = Playwright.evaluate!(page, "String(document.querySelector('#plain').checked)")?
+    page.uncheck!("input[type=\"checkbox\"]")?
+    after = page.evaluate!("String(document.querySelector('#plain').checked)")?
     Assert.eq(after, "false") ? |e| DoubleQuotedSelectorShouldUncheck(e)
 
     # Single-quoted selectors keep working too.
-    Playwright.check!(page, "input[type='checkbox']")?
-    single = Playwright.evaluate!(page, "String(document.querySelector('#plain').checked)")?
+    page.check!("input[type='checkbox']")?
+    single = page.evaluate!("String(document.querySelector('#plain').checked)")?
     Assert.eq(single, "true") ? |e| SingleQuotedSelectorShouldCheck(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

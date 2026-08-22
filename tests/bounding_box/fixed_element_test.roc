@@ -35,14 +35,14 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
 
     # Get bounding box of the fixed element (positioned at top:100, left:150, 200x100)
-    box = Playwright.bounding_box!(page, "#fixed-box")?
+    box = page.bounding_box!("#fixed-box")?
 
     # Verify position (CSS says top:100, left:150)
     Assert.true(box.x > 149.0 and box.x < 151.0) ? |e| XShouldBe150(e)
@@ -52,5 +52,5 @@ main! = |_args| {
     Assert.true(box.width > 199.0 and box.width < 201.0) ? |e| WidthShouldBe200(e)
     Assert.true(box.height > 99.0 and box.height < 101.0) ? |e| HeightShouldBe100(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

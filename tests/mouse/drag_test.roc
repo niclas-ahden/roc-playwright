@@ -35,25 +35,25 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["mouse-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["mouse-test"]).ok_or(url)))?
 
     # Drag: move to start, press, move to end, release
-    Playwright.mouse_move!(page, 50.0, 50.0)?
-    Playwright.mouse_down!(page)?
-    Playwright.mouse_move!(page, 200.0, 150.0)?
-    Playwright.mouse_up!(page)?
+    page.mouse_move!(50.0, 50.0)?
+    page.mouse_down!()?
+    page.mouse_move!(200.0, 150.0)?
+    page.mouse_up!()?
 
     # Verify down and up events were recorded
-    events = Playwright.text_content!(page, "#events")?
+    events = page.text_content!("#events")?
     Assert.eq(events, "down,up") ? |e| ShouldRecordDownAndUp(e)
 
     # Verify the mouse moved to the drag target position
-    position = Playwright.text_content!(page, "#last-position")?
+    position = page.text_content!("#last-position")?
     Assert.eq(position, "200,150") ? |e| ShouldEndAtDragTarget(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

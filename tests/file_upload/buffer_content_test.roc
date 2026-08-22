@@ -35,23 +35,23 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
 
     content = Str.to_utf8("hello world from buffer")
-    Playwright.set_input_files!(page, "#any-file", Buffers([{
+    page.set_input_files!("#any-file", Buffers([{
         name: "greeting.txt",
         mime_type: "text/plain",
         buffer: content,
     }]))?
 
-    file_name = Playwright.evaluate!(page, "document.querySelector('#any-file').files[0].name")?
-    file_size = Playwright.evaluate!(page, "String(document.querySelector('#any-file').files[0].size)")?
-    file_type = Playwright.evaluate!(page, "document.querySelector('#any-file').files[0].type")?
+    file_name = page.evaluate!("document.querySelector('#any-file').files[0].name")?
+    file_size = page.evaluate!("String(document.querySelector('#any-file').files[0].size)")?
+    file_type = page.evaluate!("document.querySelector('#any-file').files[0].type")?
 
-    Playwright.close!(browser)?
+    browser.close!()?
 
     Assert.eq(file_name, "greeting.txt") ? |_| WrongFileName(file_name)
     Assert.eq(file_size, content.len().to_str()) ? |_| WrongFileSize(file_size)

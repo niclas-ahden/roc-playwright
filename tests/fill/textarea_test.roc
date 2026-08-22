@@ -35,14 +35,14 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["form"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["form"]).ok_or(url)))?
 
-    Playwright.fill!(page, "#message", "Hello, this is a test message")?
-    message = Playwright.input_value!(page, "#message")?
+    page.fill!("#message", "Hello, this is a test message")?
+    message = page.input_value!("#message")?
     Assert.eq(message, "Hello, this is a test message") ? |e| MessageShouldMatch(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }
