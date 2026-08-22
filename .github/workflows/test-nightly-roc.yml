@@ -1,0 +1,114 @@
+name: Test latest release on latest nightly Roc
+
+# Every morning, test the latest published roc-playwright bundle, by its real
+# URL, on the newest Roc nightly. Green moves the recommendation forward in
+# that release's notes. Red means we adapt to Roc or report a bug.
+#
+# Speed decides. dev, size and interpreter run too but must not hold back a
+# recommendation.
+#
+# Publishing does not trigger this. The release workflow already tested that
+# bundle as a draft.
+
+on:
+  schedule:
+    # Nightlies publish between 10:00 and 13:30 UTC.
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-roc
+  cancel-in-progress: false
+
+jobs:
+  # Resolve the versions once, so every leg runs the exact same nightly
+  # against the exact same release.
+  resolve:
+    name: Resolve the latest nightly and the latest release
+    runs-on: ubuntu-24.04
+    outputs:
+      nightly: ${{ steps.versions.outputs.nightly }}
+      sha: ${{ steps.versions.outputs.sha }}
+      prev_sha: ${{ steps.versions.outputs.prev_sha }}
+      release: ${{ steps.versions.outputs.release }}
+      bundle: ${{ steps.versions.outputs.bundle }}
+    steps:
+      - name: Resolve versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
+          # Tag spellings have changed before, but both end in the short sha
+          prev=$(gh release list --repo roc-lang/nightlies --limit 2 --json tagName -q '.[1].tagName')
+
+          release=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          bundle=$(gh release view --repo "$GITHUB_REPOSITORY" --json assets \
+                     -q '.assets[] | select(.name | endswith(".tar.zst")) | .url')
+
+          [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
+          [ -n "$bundle" ] || { echo "error: no package bundle on roc-playwright $release" >&2; exit 1; }
+
+          {
+            echo "nightly=$tag"
+            echo "sha=${tag##*-}"
+            echo "prev_sha=${prev##*-}"
+            echo "release=$release"
+            echo "bundle=$bundle"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Roc $tag against roc-playwright $release"
+          echo "Testing roc-playwright **$release** against Roc **$tag**" >> "$GITHUB_STEP_SUMMARY"
+
+  # Versions go in the job name: `run-name` cannot see `needs`.
+  test:
+    needs: resolve
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: ${{ needs.resolve.outputs.nightly }}
+      label: roc-playwright ${{ needs.resolve.outputs.release }} on ${{ needs.resolve.outputs.nightly }}
+      ref: ${{ needs.resolve.outputs.release }}
+      bundle-url: ${{ needs.resolve.outputs.bundle }}
+
+  advisory:
+    needs: resolve
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: ${{ needs.resolve.outputs.nightly }}
+      label: Advisory ${{ needs.resolve.outputs.release }} on ${{ needs.resolve.outputs.nightly }}
+      opts: '["dev", "size", "interpreter"]'
+      ref: ${{ needs.resolve.outputs.release }}
+      bundle-url: ${{ needs.resolve.outputs.bundle }}
+
+  # Green on every leg: recommend this nightly in the tested release's notes.
+  update-recommendation:
+    name: Name ${{ needs.resolve.outputs.nightly }} in the release notes
+    needs: [resolve, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/name-nightly.sh \
+            "${{ needs.resolve.outputs.release }}" "${{ needs.resolve.outputs.nightly }}"
+
+  name-commit-range:
+    name: Name the commit range
+    needs: [resolve, test]
+    # Only for a red suite. A failed `resolve` would leave every version
+    # below empty.
+    if: needs.test.result == 'failure'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Name the commit range
+        run: |
+          echo "::error::roc-playwright ${{ needs.resolve.outputs.release }} fails on roc ${{ needs.resolve.outputs.nightly }}"
+          echo "  https://github.com/roc-lang/roc/compare/${{ needs.resolve.outputs.prev_sha }}...${{ needs.resolve.outputs.sha }}"

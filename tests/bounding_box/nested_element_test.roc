@@ -35,15 +35,15 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
 
     # Get bounding box of the nested element (inside #fixed-box with margin:10px)
     # Parent is at 150,100, nested element has margin:10px so should be at ~160,110
-    box = Playwright.bounding_box!(page, "#nested-box")?
+    box = page.bounding_box!("#nested-box")?
 
     # Verify position accounts for parent position + margin
     Assert.true(box.x > 159.0 and box.x < 161.0) ? |e| XShouldBe160(e)
@@ -53,5 +53,5 @@ main! = |_args| {
     Assert.true(box.width > 49.0 and box.width < 51.0) ? |e| WidthShouldBe50(e)
     Assert.true(box.height > 24.0 and box.height < 26.0) ? |e| HeightShouldBe25(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

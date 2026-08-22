@@ -35,14 +35,14 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["visibility-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["visibility-test"]).ok_or(url)))?
 
     # Non-existent element should not be visible
-    non_existent = Playwright.is_visible!(page, "#does-not-exist")?
+    non_existent = page.is_visible!("#does-not-exist")?
     Assert.eq(non_existent, Bool.False) ? |e| NonExistentShouldBeFalse(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

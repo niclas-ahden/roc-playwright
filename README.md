@@ -12,29 +12,26 @@ app [main!] {
 
 import pf.Cmd
 import pf.OsStr exposing [OsStr]
-import playwright.Playwright
-
-# The hooks record wires the package to the host platform's process-spawning
-# API. Build it once from basic-cli's Cmd module and pass it to the launch
-# functions. Everything after launch goes through the returned browser/page.
-hooks = {
-    new: Cmd.new_str,
-    args: Cmd.args_str,
-    spawn!: Cmd.spawn!,
-    write_stdin!: Cmd.Child.write_stdin!,
-    read_stdout!: Cmd.Child.read_stdout!,
-    kill!: Cmd.Child.kill!,
-}
+import playwright.Playwright exposing [assert!]
 
 main! : List(OsStr) => Try({}, _)
 main! = |_args| {
-    { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
+    # The record wires the package to the host platform's process-spawning
+    # API, here basic-cli's Cmd module. Everything after launch goes through
+    # the returned browser and page.
+    { browser, page } = Playwright.launch_page!({ new: Cmd.new_str, spawn!: Cmd.spawn! }, Chromium(DefaultChannel))?
 
-    Playwright.navigate!(page, "https://example.com")?
-    title = Playwright.get_title!(page)?
-    Playwright.click!(page, "button")?
+    page.navigate!("https://example.com")?
 
-    Playwright.close!(browser)
+    # Claims re-check the page until they hold or the timeout expires, like
+    # every official Playwright client's assertions.
+    assert!(page.has_title("Example Domain"))?
+    assert!(page.find("h1").has_text("Example Domain"))?
+    assert!(page.find_all("p a").is_not_empty())?
+
+    page.find("a").click!()?
+
+    browser.close!()
 }
 ```
 

@@ -35,21 +35,21 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["keyboard-form"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["keyboard-form"]).ok_or(url)))?
 
     # Click on the input to focus it
-    Playwright.click!(page, "#name-input")?
+    page.click!("#name-input")?
 
     # Use key_type_targetless! to type text into the focused input
-    Playwright.key_type_targetless!(page, "Hello World")?
+    page.key_type_targetless!("Hello World")?
 
     # Verify the input has the typed text
-    value = Playwright.input_value!(page, "#name-input")?
+    value = page.input_value!("#name-input")?
     Assert.eq(value, "Hello World") ? |e| InputShouldHaveTypedText(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

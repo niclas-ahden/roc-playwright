@@ -34,15 +34,15 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(1000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(1000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["bounding-box-test"]).ok_or(url)))?
 
     # display:none element is attached to DOM but not visible,
     # so bounding_box! times out waiting for it to become visible
-    result = Playwright.bounding_box!(page, "#hidden-display")
+    result = page.bounding_box!("#hidden-display")
 
     match result {
         Ok(_) =>
@@ -51,7 +51,7 @@ main! = |_args| {
 
         Err(WaitForTimeout(_)) =>
             # Expected - element never became visible
-            Playwright.close!(browser)
+            browser.close!()
 
         Err(other) => Err(UnexpectedError(Str.inspect(other)))
     }

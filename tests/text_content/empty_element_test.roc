@@ -35,14 +35,14 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["attributes-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["attributes-test"]).ok_or(url)))?
 
     # text_content! on empty element returns empty string
-    empty_div_text = Playwright.text_content!(page, "#empty-div")?
+    empty_div_text = page.text_content!("#empty-div")?
     Assert.eq(empty_div_text, "") ? |e| EmptyDivShouldBeEmptyString(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

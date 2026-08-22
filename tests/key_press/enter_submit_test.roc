@@ -35,29 +35,29 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["keyboard-form"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["keyboard-form"]).ok_or(url)))?
 
     # Verify initial state
-    initial_status = Playwright.text_content!(page, "#status")?
+    initial_status = page.text_content!("#status")?
     Assert.eq(initial_status, "Form not submitted") ? |e| InitialStateShouldNotBeSubmitted(e)
 
     # Fill the input with a name
-    Playwright.fill!(page, "#name-input", "John Doe")?
+    page.fill!("#name-input", "John Doe")?
 
     # Verify fill worked
-    filled_value = Playwright.input_value!(page, "#name-input")?
+    filled_value = page.input_value!("#name-input")?
     Assert.eq(filled_value, "John Doe") ? |e| FillShouldWork(e)
 
     # Press Enter on the input to submit the form (targeted)
-    Playwright.key_press!(page, "#name-input", Enter, [])?
+    page.key_press!("#name-input", Enter, [])?
 
     # Verify form was submitted
-    status = Playwright.text_content!(page, "#status")?
+    status = page.text_content!("#status")?
     Assert.eq(status, "Form submitted with: John Doe") ? |e| FormShouldBeSubmitted(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

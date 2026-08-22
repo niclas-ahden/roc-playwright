@@ -1,0 +1,277 @@
+name: Release
+
+# Tag-driven release flow:
+#
+#   git tag 0.8.0 && git push origin 0.8.0
+#
+# 1. `required` gates `draft`: the pinned compiler, speed, every OS.
+# 2. `draft` bundles the package and creates a DRAFT release with the bundle,
+#    docs and starter notes attached. A human presses Publish.
+# 3. `bundle` tests that exact bundle the way a consumer will: pinned and
+#    newest nightly, every OS.
+# 4. `recommend` names the newest nightly in the notes if it passed both from
+#    scratch (`nightly`) and on the bundle.
+#
+# Everything else (`*-advisory`) runs dev, size and interpreter and may be
+# red without blocking anything. Publish only when the whole run is green.
+# Publishing deploys the docs.
+
+on:
+  push:
+    tags:
+      - '[0-9]*'
+  # Re-run for an existing tag: pick the tag as the ref when dispatching.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Require a tag
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          [[ "$GITHUB_REF" == refs/tags/* ]] || {
+            echo "error: this workflow releases a tag, run it from one (push a tag, or pick it as the ref when dispatching)" >&2
+            exit 1
+          }
+
+  # The release gate.
+  required:
+    needs: guard
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: pinned
+      label: Release gate
+
+  # Informational, see test.yml. A red leg here reddens the run but gates
+  # nothing.
+  advisory:
+    needs: guard
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: pinned
+      label: Advisory
+      opts: '["dev", "size", "interpreter"]'
+
+  resolve-nightly:
+    name: Resolve the latest Roc nightly
+    needs: guard
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo roc-lang/nightlies --json tagName -q .tagName)
+          [ -n "$tag" ] || { echo "error: could not resolve the latest roc nightly" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest nightly is $tag"
+
+  # This checkout on the newest nightly. It cannot stop the draft. It decides
+  # what `recommend` may claim in the notes.
+  nightly:
+    needs: [guard, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: ${{ needs.resolve-nightly.outputs.tag }}
+      label: Latest nightly
+
+  # Separate call so a known roc bug in one backend cannot block `recommend`.
+  nightly-advisory:
+    needs: [guard, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: ${{ needs.resolve-nightly.outputs.tag }}
+      label: Latest nightly advisory
+      opts: '["dev", "size", "interpreter"]'
+
+  draft:
+    name: Bundle, verify and draft the release
+    needs: required
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      archive: ${{ steps.bundle.outputs.archive }}
+      artifact: bundle-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pinned nightly is the flake's compiler, so the bundle is the one
+      # `roc-workflows` test.yml already sanity checked.
+      - name: Install the Roc nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(sed -n 's/^ *PINNED_ROC_TAG: *//p' .github/workflows/suite.yml)
+          [ -n "$tag" ] || { echo "error: no PINNED_ROC_TAG in suite.yml" >&2; exit 1; }
+          .github/scripts/install-roc.sh "$tag"
+
+      - name: Bundle the package
+        id: bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          (cd package && roc bundle --output-dir "$GITHUB_WORKSPACE/dist" main.roc)
+          echo "archive=$(basename dist/*.tar.zst)" >> "$GITHUB_OUTPUT"
+
+      # `roc bundle` can exit 0 while producing a tarball that is missing
+      # modules, so an outright broken bundle must never reach a release.
+      # The full suite (`bundle`) runs against it after drafting.
+      - name: Verify the bundle holds every module
+        run: |
+          set -euo pipefail
+          tar -tf dist/*.tar.zst > contents.txt
+          cat contents.txt
+          missing=0
+          for f in package/*.roc; do
+            grep -qx "$(basename "$f")" contents.txt || {
+              echo "error: bundle is missing $(basename "$f")" >&2
+              missing=1
+            }
+          done
+          exit "$missing"
+
+      # For `bundle`. Draft assets need a token and roc fetches anonymously,
+      # so the bundle travels as an artifact and each leg serves it to roc
+      # over localhost.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ github.run_id }}
+          path: dist/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+      # Frozen under /<tag>/ on the docs site once the release is published.
+      - name: Generate docs
+        run: |
+          export ROC_DOCS_URL_ROOT="/${GITHUB_REPOSITORY#*/}/$GITHUB_REF_NAME"
+          roc docs package/main.roc
+          tar -czf docs.tar.gz -C generated-docs .
+
+      - name: Draft the release with assets and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+
+          # Reuse an existing release on re-runs, otherwise draft a new one
+          # with generated notes as the starting point for editing.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --draft --title "$tag" --generate-notes \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+          gh release upload "$tag" dist/*.tar.zst docs.tar.gz \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/${{ steps.bundle.outputs.archive }}"
+          platform=$(sed -n 's|.*pf: platform "\([^"]*\)".*|\1|p' README.md | head -1)
+          [ -n "$platform" ] || {
+            echo "error: no platform URL in README.md" >&2
+            exit 1
+          }
+          # Start from the pinned nightly, which is the one the release gate
+          # passed on. The `recommend` job moves it forward if the newest
+          # nightly passed too. If it did not, this is the right claim to keep.
+          nightly=$(sed -n 's/^ *PINNED_ROC_TAG: *//p' .github/workflows/suite.yml)
+          [ -n "$nightly" ] || {
+            echo "error: no PINNED_ROC_TAG in suite.yml" >&2
+            exit 1
+          }
+
+          # Append each section once, re-runs must not duplicate them.
+          gh release view "$tag" --json body -q .body --repo "$GITHUB_REPOSITORY" > notes.md
+          edited=
+
+          if ! grep -q '## Roc compiler version' notes.md; then
+            {
+              echo ""
+              echo "## Roc compiler version"
+              echo ""
+              echo "Compatible with: [\`roc $nightly\`](https://github.com/roc-lang/nightlies/releases/tag/$nightly)."
+              echo ""
+              echo "Roc is currently a moving target and which version you're using matters a lot. We test the latest roc-playwright release against the latest Roc nightly and update the compatibility here every day."
+              echo ""
+              echo "Oftentimes you'll still be able to use roc-playwright with other Roc versions than what's listed here, but if you run into any issues, please try the Roc version above."
+            } >> notes.md
+            edited=1
+          fi
+
+          if ! grep -q '## Using this release' notes.md; then
+            {
+              echo ""
+              echo "## Using this release"
+              echo ""
+              echo '```roc'
+              echo "app [main!] {"
+              echo "    pf: platform \"$platform\","
+              echo "    playwright: \"$url\","
+              echo "}"
+              echo '```'
+            } >> notes.md
+            edited=1
+          fi
+
+          [ -z "$edited" ] || gh release edit "$tag" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+
+          draft_url=$(gh release view "$tag" --json url -q .url --repo "$GITHUB_REPOSITORY")
+          {
+            echo "## Draft release ready"
+            echo ""
+            echo "Bundled, verified and attached: $draft_url"
+            echo ""
+            echo "Before editing the notes or pressing Publish, wait for the rest of this run:"
+            echo "the *Drafted bundle* legs run the suite against this bundle the way a"
+            echo "consumer's compiler will, and *Name the newest passing nightly* may still"
+            echo "rewrite the notes."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "draft ready: $draft_url"
+
+  # The consumer's path. roc downloads, hash-checks and unbundles the drafted
+  # bundle, then the suite runs against it. The pinned compiler is the one
+  # that produced the bundle, so it catches packaging bugs. The nightly is
+  # the one consumers install.
+  bundle:
+    needs: draft
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: pinned
+      label: Drafted bundle
+      bundle-artifact: ${{ needs.draft.outputs.artifact }}
+
+  bundle-nightly:
+    needs: [draft, resolve-nightly]
+    uses: ./.github/workflows/suite.yml
+    with:
+      roc: ${{ needs.resolve-nightly.outputs.tag }}
+      label: Drafted bundle on latest nightly
+      bundle-artifact: ${{ needs.draft.outputs.artifact }}
+
+  # The notes start on the pinned nightly, the last known good. Move them to
+  # the newest nightly only if it passed from scratch and on the bundle.
+  # Plain `needs` skips this job otherwise.
+  recommend:
+    name: Name the newest passing nightly in the notes
+    needs: [resolve-nightly, nightly, bundle, bundle-nightly, draft]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/name-nightly.sh \
+            "$GITHUB_REF_NAME" "${{ needs.resolve-nightly.outputs.tag }}"

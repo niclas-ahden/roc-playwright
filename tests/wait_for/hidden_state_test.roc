@@ -35,23 +35,23 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
 
     # Navigate to page with element that disappears after 500ms
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["disappearing-element"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["disappearing-element"]).ok_or(url)))?
 
     # Element should be visible initially
-    visible_before = Playwright.is_visible!(page, "#vanishing")?
+    visible_before = page.is_visible!("#vanishing")?
     Assert.eq(visible_before, Bool.True) ? |e| ElementShouldExistInitially(e)
 
     # wait_for! with Hidden should wait until the element disappears
-    Playwright.wait_for!(page, "#vanishing", Hidden)?
+    page.wait_for!("#vanishing", Hidden)?
 
     # Element should no longer be visible
-    visible_after = Playwright.is_visible!(page, "#vanishing")?
+    visible_after = page.is_visible!("#vanishing")?
     (if visible_after Err(ElementShouldHaveDisappeared) else Ok({}))?
 
-    Playwright.close!(browser)
+    browser.close!()
 }

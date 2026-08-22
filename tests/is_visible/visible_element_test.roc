@@ -35,13 +35,13 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["visibility-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["visibility-test"]).ok_or(url)))?
 
-    visible = Playwright.is_visible!(page, "#visible-element")?
+    visible = page.is_visible!("#visible-element")?
     Assert.eq(visible, Bool.True) ? |e| VisibleElementShouldBeTrue(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

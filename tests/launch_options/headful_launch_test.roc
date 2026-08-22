@@ -44,15 +44,15 @@ main! = |_args|
             url = worker_url!({})
             # Verify headless: Bool.False is accepted by the driver (launches a visible browser)
             { browser, page } = Playwright.launch_page_with!(
-                { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-                { browser_type: Chromium(DefaultChannel), headless: Bool.False, timeout: TimeoutMilliseconds(10000), args: [], has_touch: Bool.False, permissions: [] },
+                { new: Cmd.new_str, spawn!: Cmd.spawn! },
+                { headless: Bool.False, timeout: TimeoutMilliseconds(10000) },
             )?
 
-            Playwright.navigate!(page, Url.to_str(url))?
+            page.navigate!(Url.to_str(url))?
 
-            title = Playwright.get_title!(page)?
+            title = page.get_title!()?
             Assert.eq(title, "Test Home Page") ? |e| Title(e)
 
-            Playwright.close!(browser)
+            browser.close!()
         }
     }

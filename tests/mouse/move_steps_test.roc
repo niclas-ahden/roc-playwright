@@ -35,20 +35,20 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["mouse-test"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["mouse-test"]).ok_or(url)))?
 
     # Move with 10 interpolated steps -- should fire multiple mousemove events
-    Playwright.mouse_move_with_steps!(page, 200.0, 150.0, 10)?
+    page.mouse_move_with_steps!(200.0, 150.0, 10)?
 
-    move_count_str = Playwright.text_content!(page, "#move-count")?
+    move_count_str = page.text_content!("#move-count")?
     move_count = U64.from_str(move_count_str).ok_or(0)
 
     # 10 steps should produce at least 10 mousemove events
     Assert.true(move_count >= 10) ? |e| ShouldHaveMultipleMoveEvents(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

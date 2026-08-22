@@ -35,25 +35,25 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
 
     # Verify browser works before close
-    Playwright.navigate!(page, Url.to_str(url))?
-    title_before = Playwright.get_title!(page)?
+    page.navigate!(Url.to_str(url))?
+    title_before = page.get_title!()?
     Assert.eq(title_before, "Test Home Page") ? |e| BrowserWorksBeforeClose(e)
 
     # Close the browser
-    Playwright.close!(browser)?
+    browser.close!()?
 
     # After close, trying to use the browser should fail
     # The process is dead, so write_stdin should error
-    result = Playwright.navigate!(page, Url.to_str(url))
+    result = page.navigate!(Url.to_str(url))
     _ = Assert.err(result) ? |e| BrowserDeadAfterClose(e)
 
     # close! twice should fail (process is already dead)
-    double_close_result = Playwright.close!(browser)
+    double_close_result = browser.close!()
     _ = Assert.err(double_close_result) ? |e| DoubleCloseFails(e)
 
     Ok({})

@@ -35,13 +35,13 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
 
-    Playwright.navigate!(page, Url.to_str(url))?
-    h1 = Playwright.text_content!(page, "h1")?
+    page.navigate!(Url.to_str(url))?
+    h1 = page.text_content!("h1")?
     Assert.eq(h1, "Welcome to the Test Server") ? |e| HomepageH1(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

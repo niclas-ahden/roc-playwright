@@ -35,15 +35,15 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
         Chromium(DefaultChannel),
     )?
 
-    Playwright.navigate!(page, Url.to_str(url))?
+    page.navigate!(Url.to_str(url))?
 
     # Non-existent elements should return 0
-    count = Playwright.query_count!(page, "#does-not-exist")?
+    count = page.query_count!("#does-not-exist")?
     Assert.eq(count, 0) ? |e| NonExistentCount(e)
 
-    Playwright.close!(browser)
+    browser.close!()
 }

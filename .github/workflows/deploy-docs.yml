@@ -8,10 +8,11 @@ on:
       - '**.roc'
       - 'docs/index.html'
       - '.github/workflows/deploy-docs.yml'
-  workflow_run:
-    workflows: ["Bundle"]
-    types:
-      - completed
+  # Re-deploy when a release is published. Its docs.tar.gz was attached while
+  # the release was still a draft (see release.yaml), so it is already there
+  # to serve.
+  release:
+    types: [published]
 
   workflow_dispatch:
 

@@ -58,22 +58,22 @@ main! = |_args| {
 
     { browser, page } = Playwright.launch_page!(
 
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
 
         Chromium(DefaultChannel),
 
     )?
-    Playwright.navigate!(page, Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
+    page.navigate!(Url.to_str(Url.append_path(url, ["file-upload"]).ok_or(url)))?
 
     # Annotated so the unused Buffers payload type doesn't stay unresolved
     files : Playwright.InputFiles
     files = Paths([test_path])
-    Playwright.set_input_files!(page, "#any-file", files)?
+    page.set_input_files!("#any-file", files)?
 
-    file_name = Playwright.evaluate!(page, "document.querySelector('#any-file').files[0].name")?
-    file_size = Playwright.evaluate!(page, "String(document.querySelector('#any-file').files[0].size)")?
+    file_name = page.evaluate!("document.querySelector('#any-file').files[0].name")?
+    file_size = page.evaluate!("String(document.querySelector('#any-file').files[0].size)")?
 
-    Playwright.close!(browser)?
+    browser.close!()?
     _ = Path.delete!(Path.Utf8(test_path))
 
     Assert.eq(file_name, "roc_playwright_test_upload.txt") ? |_| WrongFileName(file_name)

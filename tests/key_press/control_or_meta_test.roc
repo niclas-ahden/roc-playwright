@@ -59,14 +59,14 @@ main! = |_args| {
 test_select_all! : Str, Playwright.Modifier => Try(Bool, _)
 test_select_all! = |page_url, modifier| {
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, args: Cmd.args_str, spawn!: Cmd.spawn!, write_stdin!: Cmd.Child.write_stdin!, read_stdout!: Cmd.Child.read_stdout!, kill!: Cmd.Child.kill! },
-        { browser_type: Chromium(DefaultChannel), headless: Bool.True, timeout: TimeoutMilliseconds(5000), args: [], has_touch: Bool.False, permissions: [] },
+        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { timeout: TimeoutMilliseconds(5000) },
     )?
-    Playwright.navigate!(page, page_url)?
-    Playwright.click!(page, "#text-area")?
-    Playwright.key_press_targetless!(page, KeyA, [modifier])?
+    page.navigate!(page_url)?
+    page.click!("#text-area")?
+    page.key_press_targetless!(KeyA, [modifier])?
 
-    selection = Playwright.text_content!(page, "#selection-info")?
-    Playwright.close!(browser)?
+    selection = page.text_content!("#selection-info")?
+    browser.close!()?
     Ok(selection == "Selection: 58 characters")
 }

@@ -1,42 +1,35 @@
 ## A Roc library for browser automation, powered by [Playwright](https://playwright.dev/).
 ##
 ## ```
-## hooks = {
-##     new: Cmd.new_str,
-##     args: Cmd.args_str,
-##     spawn!: Cmd.spawn!,
-##     write_stdin!: Cmd.Child.write_stdin!,
-##     read_stdout!: Cmd.Child.read_stdout!,
-##     kill!: Cmd.Child.kill!,
-## }
-## { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
+## { browser, page } = Playwright.launch_page!({ new: Cmd.new_str, spawn!: Cmd.spawn! }, Chromium(DefaultChannel))?
 ## Playwright.navigate!(page, "https://example.com")?
 ## title = Playwright.get_title!(page)?
-## Playwright.close!(browser)
+## browser.close!()
 ## ```
 ##
 ## The [PlatformHooks] record wires the package to the host platform's process-spawning
-## API. Build it once from [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module as above and pass it to
-## the launch functions. Everything after launch goes through the [Browser] and
-## [Page] values it returns.
+## API, here [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module. Everything after launch goes
+## through the [Browser] and [Page] values it returns.
 import base64.Base64
 
 Playwright :: [].{
 
 	## The host platform's process-spawning API, wired in at launch. Roc has no
-	## parameterized modules, so these arrive as plain function values. Build
-	## the record once from [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module:
+	## parameterized modules, so the entry points arrive as plain function
+	## values, from [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module:
 	##
 	## ```
-	## hooks = {
-	##     new: Cmd.new_str,
-	##     args: Cmd.args_str,
-	##     spawn!: Cmd.spawn!,
-	##     write_stdin!: Cmd.Child.write_stdin!,
-	##     read_stdout!: Cmd.Child.read_stdout!,
-	##     kill!: Cmd.Child.kill!,
-	## }
+	## { new: Cmd.new_str, spawn!: Cmd.spawn! }
 	## ```
+	##
+	## Only these two are fields because they are genuine choices: which
+	## constructor builds a command, and which spawn flavor starts the driver
+	## (`Cmd.spawn!`, or `Cmd.spawn_leashed!` to tie the driver's lifetime to
+	## the calling process). Everything past the spawn is reached through
+	## methods on the platform's own types instead: the launch functions
+	## require `cmd.args_str`, `child.write_stdin!`, `child.read_stdout!` and
+	## `child.kill!`, which basic-cli's `Cmd` and `Cmd.Child` carry under
+	## exactly those names.
 	##
 	## `driver` names the Playwright CLI to spawn, and defaults to `playwright`
 	## — what an install puts on PATH. Set it only when yours lives somewhere a
@@ -55,22 +48,18 @@ Playwright :: [].{
 	## types are. `err` is its I/O error type. All three stay generic so the
 	## package does not depend on any one platform.
 	##
-	## `read_stdout!` must return exactly the requested number of bytes or fail.
-	## Returning fewer would desync the message framing.
+	## The platform's `read_stdout!` must return exactly the requested number
+	## of bytes or fail. Returning fewer would desync the message framing.
 	PlatformHooks(cmd, child, err) : {
 		new : Str -> cmd,
-		args : cmd, List(Str) -> cmd,
 		spawn! : cmd => Try(child, err),
-		write_stdin! : child, List(U8) => Try({}, err),
-		read_stdout! : child, U64 => Try(List(U8), err),
-		kill! : child => Try({}, err),
 		driver : Str ?? "playwright",
 	}
 
 	## A running browser, returned by [launch!]. The three closures are built
 	## once at launch with the spawned driver process bound inside, so every
 	## call downstream is unary. `err` is the platform's I/O error type.
-	Browser(err) : {
+	Browser(err) := {
 		write_stdin! : List(U8) => Try({}, err),
 		read_stdout! : U64 => Try(List(U8), err),
 		kill! : {} => Try({}, err),
@@ -80,7 +69,7 @@ Playwright :: [].{
 
 	## A browser context with isolated session state (cookies, storage,
 	## permissions). Returned by [new_context!].
-	Context(err) : {
+	Context(err) := {
 		browser : Browser(err),
 		context_guid : Str,
 		has_touch : Bool,
@@ -88,10 +77,634 @@ Playwright :: [].{
 
 	## A page (browser tab), where automation happens. Returned by [new_page!]
 	## or [launch_page!]. Almost every function in this module takes one.
-	Page(err) : {
+	Page(err) := {
 		context : Context(err),
 		page_guid : Str,
 		frame_guid : Str,
+	}.{
+		## The one element matching `selector`, for acting on or asserting
+		## against. Lazy: nothing is sent to the driver until you use it.
+		##
+		## Strict, like Playwright's locators: if the selector turns out to
+		## match more than one element, actions and assertions on it fail
+		## instead of silently picking the first match. Use [find_all] when
+		## several matches are expected.
+		##
+		## ```
+		## page.find("#username").fill!("alice")?
+		## assert!(page.find("h1").has_text("Welcome"))?
+		## ```
+		find : Page(err), Str -> Element(err)
+		find = |page, selector| Element.{ page, selector, which: Only }
+
+		## Every element matching `selector`, possibly none. Has no actions.
+		## Narrow to a single one with [Elements.first], [Elements.last] or
+		## [Elements.nth].
+		##
+		## ```
+		## assert!(page.find_all("nav a").has_count(5))?
+		## page.find_all("nav a").first().click!()?
+		## ```
+		find_all : Page(err), Str -> Elements(err)
+		find_all = |page, selector| Elements.{ page, selector }
+
+		## Claims about the page itself, for [assert!]. Asserting one
+		## re-checks the page until it holds or the timeout expires (the
+		## page's [Timeout], unless [assert_with!] overrides it), like the
+		## claims on [Element].
+
+		## The document title is exactly `want`, after normalizing whitespace.
+		has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		has_title = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.False, |r| match r {
+				Received(got) => "expected page title \"${want}\", got \"${got}\""
+				_ => "expected page title \"${want}\""
+			}),
+		}
+
+		not_has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_has_title = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.True, |_r|
+				"expected page title other than \"${want}\""),
+		}
+
+		## The document title contains `want` as a substring, after
+		## normalizing whitespace.
+		title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		title_contains = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.False, |r| match r {
+				Received(got) => "expected page title containing \"${want}\", got \"${got}\""
+				_ => "expected page title containing \"${want}\""
+			}),
+		}
+
+		not_title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_title_contains = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.True, |r| match r {
+				Received(got) => "expected page title not containing \"${want}\", got \"${got}\""
+				_ => "expected page title not containing \"${want}\""
+			}),
+		}
+
+		## The document title matches the regular expression, which may be
+		## found anywhere in the title: anchor with `^` and `$` to claim all
+		## of it. An invalid pattern fails immediately with [ExpectError].
+		title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		title_matches = |page, regex| Claim.{
+			run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.False, |r| match r {
+				Received(got) => "expected page title matching /${regex}/, got \"${got}\""
+				_ => "expected page title matching /${regex}/"
+			}),
+		}
+
+		not_title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_title_matches = |page, regex| Claim.{
+			run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.True, |r| match r {
+				Received(got) => "expected page title not matching /${regex}/, got \"${got}\""
+				_ => "expected page title not matching /${regex}/"
+			}),
+		}
+
+		## The page URL is exactly `want`, as the browser reports it, so
+		## normally with a trailing slash after a bare host.
+		has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		has_url = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.False, |r| match r {
+				Received(got) => "expected page url \"${want}\", got \"${got}\""
+				_ => "expected page url \"${want}\""
+			}),
+		}
+
+		not_has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_has_url = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.True, |_r|
+				"expected page url other than \"${want}\""),
+		}
+
+		## The page URL contains `want` as a substring. The usual claim when
+		## the URL carries a generated id: `url_contains("/orders/")` accepts
+		## any order page.
+		url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		url_contains = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.False, |r| match r {
+				Received(got) => "expected page url containing \"${want}\", got \"${got}\""
+				_ => "expected page url containing \"${want}\""
+			}),
+		}
+
+		not_url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_url_contains = |page, want| Claim.{
+			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.True, |r| match r {
+				Received(got) => "expected page url not containing \"${want}\", got \"${got}\""
+				_ => "expected page url not containing \"${want}\""
+			}),
+		}
+
+		## The page URL matches the regular expression, which may be found
+		## anywhere in the URL: anchor with `^` and `$` to claim all of it.
+		## The usual claim when the URL carries a generated id:
+		## `url_matches("/orders/\\d+")` accepts any order page but not the
+		## order index. An invalid pattern fails immediately with
+		## [ExpectError].
+		url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		url_matches = |page, regex| Claim.{
+			run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.False, |r| match r {
+				Received(got) => "expected page url matching /${regex}/, got \"${got}\""
+				_ => "expected page url matching /${regex}/"
+			}),
+		}
+
+		not_url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+		not_url_matches = |page, regex| Claim.{
+			run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.True, |r| match r {
+				Received(got) => "expected page url not matching /${regex}/, got \"${got}\""
+				_ => "expected page url not matching /${regex}/"
+			}),
+		}
+	}
+
+	## Which of a selector's matches an [Element] refers to. `Only` is what
+	## [Page.find] produces. `Nth` comes from [Elements.nth] and friends.
+	Which : [Only, Nth(I64)]
+
+	## A single element: a page plus the selector that finds it, resolved fresh
+	## on every call rather than held as a handle. Produced by [Page.find].
+	Element(err) := {
+		page : Page(err),
+		selector : Str,
+		which : Which,
+	}.{
+		click! : Element([ClickError(Str), ..e]) => Try({}, [ClickError(Str), ..e])
+		click! = |el| click_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		fill! : Element([FillError(Str), ..e]), Str => Try({}, [FillError(Str), ..e])
+		fill! = |el, value| fill_impl!(el.page, Playwright.resolve(el), value, Bool.True)
+
+		hover! : Element([HoverError(Str), ..e]) => Try({}, [HoverError(Str), ..e])
+		hover! = |el| hover_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		check! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
+		check! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.True, Bool.True)
+
+		uncheck! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
+		uncheck! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.False, Bool.True)
+
+		text! : Element([TextContentNotFound, TextContentError(Str), DecodeError, ..e]) => Try(Str, [TextContentNotFound, TextContentError(Str), DecodeError, ..e])
+		text! = |el| text_content_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		value! : Element([InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e]) => Try(Str, [InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e])
+		value! = |el| input_value_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		attribute! : Element([AttributeNotFound, AttributeError(Str), DecodeError, ..e]), Str => Try(Str, [AttributeNotFound, AttributeError(Str), DecodeError, ..e])
+		attribute! = |el, name| get_attribute_impl!(el.page, Playwright.resolve(el), name, Bool.True)
+
+		is_visible! : Element([IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e]) => Try(Bool, [IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e])
+		is_visible! = |el| is_visible_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		wait_for! : Element([WaitForTimeout(Str), ..e]), WaitForState => Try({}, [WaitForTimeout(Str), ..e])
+		wait_for! = |el, state| wait_for_impl!(el.page, Playwright.resolve(el), state, Bool.True)
+
+		bounding_box! : Element([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]) => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
+		bounding_box! = |el| bounding_box_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+		## The one descendant matching `selector`.
+		find : Element(err), Str -> Element(err)
+		find = |el, selector| Element.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}", which: Only }
+
+		## Every descendant matching `selector`.
+		find_all : Element(err), Str -> Elements(err)
+		find_all = |el, selector| Elements.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}" }
+
+		## Claims for [assert!]. Building one is pure and sends nothing to
+		## the driver; asserting it goes through the driver's own `expect`
+		## call, the same one every official Playwright client's assertions
+		## use, which re-checks the page until the claim holds or the timeout
+		## expires (the page's [Timeout], unless [assert_with!] overrides
+		## it). A claim that never holds fails with
+		## [AssertionFailed]; a selector matching more than one element is a
+		## strict mode violation and fails immediately with [ExpectError].
+		##
+		## The `not_` variants re-check until the claim stops holding, so
+		## they are how to wait for a value to change away. A missing element
+		## fails them rather than passing vacuously: claim absence with
+		## [is_hidden] instead.
+
+		## The element's text is exactly `want`. Whitespace is normalized on
+		## both sides before comparing, like Playwright's `toHaveText`.
+		has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		has_text = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected text \"${want}\", got \"${got}\""
+					_ => "${sel}: expected text \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		not_has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		not_has_text = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.True, |r| match r {
+					Received(_) => "${sel}: expected text other than \"${want}\""
+					_ => "${sel}: expected text other than \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		## The element's text contains `want` as a substring, after
+		## normalizing whitespace, like Playwright's `toContainText`.
+		contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		contains_text = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected text containing \"${want}\", got \"${got}\""
+					_ => "${sel}: expected text containing \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		not_contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		not_contains_text = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.True, |r| match r {
+					Received(got) => "${sel}: expected text not containing \"${want}\", got \"${got}\""
+					_ => "${sel}: expected text not containing \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		## The element's text matches the regular expression, which may be
+		## found anywhere in the text: anchor with `^` and `$` to claim all
+		## of it. For genuinely dynamic content, like counters or generated
+		## ids: `matches_text("Synced \\d+ seconds ago")`. Fixed text reads
+		## better through [has_text] or [contains_text], which take their
+		## argument literally.
+		##
+		## The text is matched raw, without the whitespace normalization
+		## [has_text] applies, like the quantified text claims. An invalid
+		## pattern fails immediately with [ExpectError].
+		matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		matches_text = |el, regex| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected text matching /${regex}/, got \"${got}\""
+					_ => "${sel}: expected text matching /${regex}/, but no element matched the selector"
+				})
+			},
+		}
+
+		not_matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		not_matches_text = |el, regex| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.True, |r| match r {
+					Received(got) => "${sel}: expected text not matching /${regex}/, got \"${got}\""
+					_ => "${sel}: expected text not matching /${regex}/, but no element matched the selector"
+				})
+			},
+		}
+
+		has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		has_value = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_value_impl!(el.page, t, sel, want, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected value \"${want}\", got \"${got}\""
+					_ => "${sel}: expected value \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		not_has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		not_has_value = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_value_impl!(el.page, t, sel, want, Bool.True, |r| match r {
+					Received(_) => "${sel}: expected value other than \"${want}\""
+					_ => "${sel}: expected value other than \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
+		has_attribute = |el, name, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_attribute_impl!(el.page, t, sel, name, want, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected ${name}=\"${want}\", got \"${got}\""
+					NullReceived => "${sel}: expected ${name}=\"${want}\", but the element has no ${name} attribute"
+					NoElement => "${sel}: expected ${name}=\"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		not_has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
+		not_has_attribute = |el, name, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_attribute_impl!(el.page, t, sel, name, want, Bool.True, |r| match r {
+					Received(_) => "${sel}: expected ${name} other than \"${want}\""
+					NullReceived => "${sel}: expected ${name} other than \"${want}\""
+					NoElement => "${sel}: expected ${name} other than \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		## The element's class list contains `want`, as a whole class name
+		## rather than a substring, so `has_class("active")` does not match
+		## `class="inactive"`. Other classes on the element are fine. `want`
+		## may name several classes separated by whitespace, and then all of
+		## them must be present, in any order, like Playwright's
+		## `toContainClass`.
+		has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		has_class = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected class \"${want}\", got class list \"${got}\""
+					_ => "${sel}: expected class \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		not_has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
+		not_has_class = |el, want| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.True, |r| match r {
+					Received(got) => "${sel}: expected class list without \"${want}\", got class list \"${got}\""
+					_ => "${sel}: expected class list without \"${want}\", but no element matched the selector"
+				})
+			},
+		}
+
+		is_visible : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_visible = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.visible", Bool.False, |r| match r {
+					Received(got) => "${sel}: expected to be visible, but it is ${got}"
+					_ => "${sel}: expected to be visible, but no element matched the selector"
+				})
+			},
+		}
+
+		## Holds when the element is not visible, including when nothing
+		## matches the selector at all, like Playwright's `toBeHidden`.
+		is_hidden : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_hidden = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.hidden", Bool.False, |r| match r {
+					Received(got) => "${sel}: expected to be hidden, but it is ${got}"
+					_ => "${sel}: expected to be hidden"
+				})
+			},
+		}
+
+		## The element exists in the DOM, visible or not, like Playwright's
+		## `toBeAttached`. [is_visible] makes the stronger claim.
+		exists : Element(AssertError(e)) -> Claim(AssertError(e))
+		exists = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.attached", Bool.False, |_r|
+					"${sel}: expected a matching element, but none exists")
+			},
+		}
+
+		## No element matches the selector at all. The strictest absence
+		## claim: [is_hidden] also passes on an element that is present but
+		## invisible, this one does not. Like every single-element claim, a
+		## selector matching more than one element is a strict mode violation
+		## and fails with [ExpectError] rather than [AssertionFailed].
+		not_exists : Element(AssertError(e)) -> Claim(AssertError(e))
+		not_exists = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.detached", Bool.False, |_r|
+					"${sel}: expected no matching element, but one exists")
+			},
+		}
+
+		## The element has no content: an empty value for an input or
+		## textarea, no text (after trimming whitespace) for anything else,
+		## like Playwright's `toBeEmpty`.
+		is_empty : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_empty = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.False, |r| match r {
+					Received(_) => "${sel}: expected to be empty, but it has content"
+					_ => "${sel}: expected to be empty, but no element matched the selector"
+				})
+			},
+		}
+
+		is_not_empty : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_not_empty = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.True, |r| match r {
+					Received(_) => "${sel}: expected content, but it is empty"
+					_ => "${sel}: expected content, but no element matched the selector"
+				})
+			},
+		}
+
+		## The checkbox or radio button is checked. Fails with [ExpectError]
+		## on an element that is neither.
+		is_checked : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_checked = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_checked_impl!(el.page, t, sel, Bool.True, |r| match r {
+					Received(got) => "${sel}: expected to be checked, but it is ${got}"
+					_ => "${sel}: expected to be checked, but no element matched the selector"
+				})
+			},
+		}
+
+		is_unchecked : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_unchecked = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_checked_impl!(el.page, t, sel, Bool.False, |r| match r {
+					Received(got) => "${sel}: expected to be unchecked, but it is ${got}"
+					_ => "${sel}: expected to be unchecked, but no element matched the selector"
+				})
+			},
+		}
+
+		is_enabled : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_enabled = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.enabled", Bool.False, |r| match r {
+					Received(got) => "${sel}: expected to be enabled, but it is ${got}"
+					_ => "${sel}: expected to be enabled, but no element matched the selector"
+				})
+			},
+		}
+
+		is_disabled : Element(AssertError(e)) -> Claim(AssertError(e))
+		is_disabled = |el| Claim.{
+			run!: |t| {
+				sel = Playwright.resolve(el)
+				expect_state_impl!(el.page, t, sel, "to.be.disabled", Bool.False, |r| match r {
+					Received(got) => "${sel}: expected to be disabled, but it is ${got}"
+					_ => "${sel}: expected to be disabled, but no element matched the selector"
+				})
+			},
+		}
+	}
+
+	## Zero or more elements. Deliberately has no actions: there is no sensible
+	## meaning for clicking or filling a set. Produced by [Page.find_all].
+	Elements(err) := {
+		page : Page(err),
+		selector : Str,
+	}.{
+		count! : Elements([QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(U64, [QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
+		count! = |els| Playwright.query_count!(els.page, els.selector)
+
+		## The text of every match, in document order. One round trip for the
+		## count plus one per element, so prefer [Elements.has_count]
+		## when you only care how many there are.
+		texts! : Elements([TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(List(Str), [TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
+		texts! = |els| {
+			n = els.count!()?
+			Playwright.collect!(els, 0, n, [], |el| el.text!())
+		}
+
+		## The `i`th match, counting from 0. Negative counts from the end.
+		nth : Elements(err), I64 -> Element(err)
+		nth = |els, i| Element.{ page: els.page, selector: els.selector, which: Nth(i) }
+
+		first : Elements(err) -> Element(err)
+		first = |els| els.nth(0)
+
+		last : Elements(err) -> Element(err)
+		last = |els| els.nth(-1)
+
+		## Claims about the collection as a whole, for [assert!]. These go
+		## through the driver's `expect` call and re-check the page until
+		## they hold or the timeout expires (the page's [Timeout], unless
+		## [assert_with!] overrides it), like the claims on [Element].
+
+		has_count : Elements(AssertError(e)), U64 -> Claim(AssertError(e))
+		has_count = |els, want| Claim.{
+			run!: |t| expect_count_impl!(els.page, t, els.selector, want, Bool.False, |r| match r {
+				Received(got) => "${els.selector}: expected ${want.to_str()} matches, got ${got}"
+				_ => "${els.selector}: expected ${want.to_str()} matches"
+			}),
+		}
+
+		is_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
+		is_empty = |els| els.has_count(0)
+
+		is_not_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
+		is_not_empty = |els| Claim.{
+			run!: |t| expect_count_impl!(els.page, t, els.selector, 0, Bool.True, |_r|
+				"${els.selector}: expected at least one match, got none"),
+		}
+
+		## Exactly these texts, in document order, each after normalizing
+		## whitespace. The count must match too, so this subsumes [has_count].
+		## Playwright's `toHaveText` with an array argument means the same thing.
+		has_texts : Elements(AssertError(e)), List(Str) -> Claim(AssertError(e))
+		has_texts = |els, want| Claim.{
+			run!: |t| {
+				want_str = Str.inspect(want)
+				expect_texts_impl!(els.page, t, els.selector, want, |r| match r {
+					Received(got) => "${els.selector}: expected texts ${want_str}, got ${got}"
+					_ => "${els.selector}: expected texts ${want_str}"
+				})
+			},
+		}
+
+		## Quantified claims: the same per-element expectations as on
+		## [Element], applied across every match (`all_`), at least one
+		## (`any_`), or none of them (`none_`). Playwright has no quantified
+		## assertions, so these are this package's own addition.
+		##
+		## The text and visibility families run as retried count claims on
+		## the selector composed with a filter engine, upstream's own idiom
+		## for quantifiers, so they re-check the page like every other
+		## driver-backed claim. Text is matched raw, without normalizing
+		## whitespace, unlike [Element.has_text]. The value and attribute
+		## families read live DOM properties no selector engine can see, so
+		## they stay one-shot: the claim is judged against the matches as
+		## they are at call time, and the page should be settled first, e.g.
+		## by asserting [has_count] before one of them.
+		##
+		## An empty set fails `all_` and `any_` claims rather than passing
+		## vacuously: the usual reason a set is empty is a selector typo, and
+		## silently passing is the worst thing a test can do. `none_` claims
+		## pass on an empty set, because nothing matching is the strongest
+		## form of the claimed absence. Pair one with [is_not_empty] when the
+		## matches must exist too. The non-vacuity makes `all_` two
+		## sequential retried checks, so a claim that never holds can take up
+		## to two timeouts to fail.
+
+		all_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		all_has_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+		any_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		any_has_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+		none_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		none_has_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+		all_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		all_contains_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+		any_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		any_contains_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+		none_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+		none_contains_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+		all_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+		all_has_value = |els, want| Playwright.value_claim(els, All, "to have value \"${want}\"", |v| v == want)
+
+		any_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+		any_has_value = |els, want| Playwright.value_claim(els, Any, "to have value \"${want}\"", |v| v == want)
+
+		none_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+		none_has_value = |els, want| Playwright.value_claim(els, None, "to have value \"${want}\"", |v| v == want)
+
+		all_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+		all_has_attribute = |els, name, want| Playwright.attr_claim(els, All, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+		any_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+		any_has_attribute = |els, name, want| Playwright.attr_claim(els, Any, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+		none_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+		none_has_attribute = |els, name, want| Playwright.attr_claim(els, None, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+		all_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+		all_visible = |els| Playwright.filtered_all(els, "visible=false", "to be visible")
+
+		any_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+		any_visible = |els| Playwright.filtered_any(els, "visible=true", "to be visible")
+
+		none_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+		none_visible = |els| Playwright.filtered_none(els, "visible=true", "to be visible")
+
+		all_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+		all_hidden = |els| Playwright.filtered_all(els, "visible=true", "to be hidden")
+
+		any_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+		any_hidden = |els| Playwright.filtered_any(els, "visible=false", "to be hidden")
+
+		none_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+		none_hidden = |els| Playwright.filtered_none(els, "visible=false", "to be hidden")
 	}
 
 	## Ways [launch!] and [launch_with!] can fail. `CouldNotStartDriver` means the
@@ -120,35 +733,82 @@ Playwright :: [].{
 		..e,
 	]
 
-	## Options for [launch_with!].
+	## Options for [launch_with!]. Every field carries a default, so a call
+	## spells only what it changes, e.g. `{ headless: Bool.False }`. Like
+	## [PlatformHooks]'s `driver`, the defaults fill in a record written
+	## inline at the call. A record bound to a name first has to spell every
+	## field or carry a `LaunchOptions` annotation.
 	LaunchOptions : {
-		browser_type : BrowserType,
-		headless : Bool,
-		timeout : Timeout,
-		args : List(Str),
+		browser_type : BrowserType ?? Chromium(DefaultChannel),
+		headless : Bool ?? Bool.True,
+		timeout : Timeout ?? TimeoutMilliseconds(30000),
+		args : List(Str) ?? [],
 	}
 
 	## Options for [launch_page_with!]: [LaunchOptions] plus the context
-	## options from [ContextOptions].
+	## options from [ContextOptions]. Every field carries a default, applied
+	## the way [LaunchOptions] describes.
 	LaunchPageOptions : {
-		browser_type : BrowserType,
-		headless : Bool,
-		timeout : Timeout,
-		args : List(Str),
-		has_touch : Bool,
-		permissions : List(Str),
+		browser_type : BrowserType ?? Chromium(DefaultChannel),
+		headless : Bool ?? Bool.True,
+		timeout : Timeout ?? TimeoutMilliseconds(30000),
+		args : List(Str) ?? [],
+		has_touch : Bool ?? Bool.False,
+		permissions : List(Str) ?? [],
 	}
 
-	## Options for [new_context_with!].
+	## Options for [new_context_with!]. Every field carries a default, applied
+	## the way [LaunchOptions] describes.
 	ContextOptions : {
-		has_touch : Bool,
-		permissions : List(Str),
+		has_touch : Bool ?? Bool.False,
+		permissions : List(Str) ?? [],
 	}
 
-	## Options for [navigate_with!].
+	## Ways the driver-backed claims ([Element.has_text], [Elements.has_count],
+	## [Page.has_title], ...) can fail when asserted. `AssertionFailed` carries
+	## the human-readable explanation of an expectation that did not hold.
+	## `ExpectError` carries a usage error the driver reported instead of
+	## checking, like a strict mode violation or an invalid selector.
+	## `UnexpectedExpectResponse` carries a response that did not decode.
+	AssertError(e) : [
+		AssertionFailed(Str),
+		ExpectError(Str),
+		UnexpectedExpectResponse(Str),
+		..e,
+	]
+
+	## Error unions the client-side quantified claims work in. Each is the
+	## union of the reads the claim performs (one per match, plus the count
+	## read) plus `AssertionFailed`, which carries the human-readable
+	## explanation.
+	ValueAssertError(e) : [
+		InputValueError(Str),
+		InputValueNotFound,
+		UnexpectedStringResponse(Str),
+		QueryCountError(Str),
+		QueryCountNoResult,
+		UnexpectedIntResponse(Str),
+		AssertionFailed(Str),
+		..e,
+	]
+
+	AttrAssertError(e) : [
+		AttributeNotFound,
+		AttributeError(Str),
+		DecodeError,
+		QueryCountError(Str),
+		QueryCountNoResult,
+		UnexpectedIntResponse(Str),
+		AssertionFailed(Str),
+		..e,
+	]
+
+	## Options for [navigate_with!]. `wait_until` defaults to `Load`, applied
+	## the way [LaunchOptions] describes, which makes an inline
+	## `{ url }` mean the same as [navigate!].
 	NavigateOptions : {
 		url : Str,
-		wait_until : WaitUntil,
+		wait_until : WaitUntil ?? Load,
 	}
 
 	## Start and end point of a touch gesture, in CSS pixels relative to the
@@ -183,8 +843,9 @@ Playwright :: [].{
 	## `Custom("chrome-beta")` or `Custom("msedge-dev")`.
 	Channel : [DefaultChannel, Full, Chrome, MsEdge, Custom(Str)]
 
-	## Timeout for action and navigation operations (click, fill, navigate, etc.).
-	## Does not affect browser launch, which always uses a 30s timeout.
+	## Timeout for action and navigation operations (click, fill, navigate, etc.)
+	## and for how long the expect-based assertions keep re-checking before
+	## failing. Does not affect browser launch, which always uses a 30s timeout.
 	## `NoTimeout` means wait indefinitely.
 	Timeout : [TimeoutMilliseconds(U64), NoTimeout]
 
@@ -312,9 +973,11 @@ Playwright :: [].{
 	## ```
 	## browser = Playwright.launch!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch! : PlatformHooks(cmd, child, LaunchError(s, e)), BrowserType => Try(Browser(LaunchError(s, e)), LaunchError(s, e))
+	launch! : PlatformHooks(cmd, child, LaunchError(s, e)), BrowserType => Try(Browser(LaunchError(s, e)), LaunchError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchError(s, e)), child.kill! : child => Try({}, LaunchError(s, e))]
 	launch! = |hooks, browser_type|
-		Playwright.launch_with!(hooks, { browser_type, headless: Bool.True, timeout: TimeoutMilliseconds(30000), args: [] })
+		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
+		# bare value instead of a one-field record. Revert when fixed.
+		Playwright.launch_with!(hooks, { browser_type: browser_type })
 
 	## Launch a browser with custom options.
 	##
@@ -333,20 +996,16 @@ Playwright :: [].{
 	##     args: ["--use-fake-device-for-media-capture"],
 	## })?
 	## ```
-	launch_with! : PlatformHooks(cmd, child, LaunchError(s, e)), LaunchOptions => Try(Browser(LaunchError(s, e)), LaunchError(s, e))
+	launch_with! : PlatformHooks(cmd, child, LaunchError(s, e)), LaunchOptions => Try(Browser(LaunchError(s, e)), LaunchError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchError(s, e)), child.kill! : child => Try({}, LaunchError(s, e))]
 	launch_with! = |hooks, { browser_type, headless, timeout, args }| {
 		# Bind the hooks to locals for reuse below. (Direct field calls on a
 		# plain record parameter resolve as method dispatch, so they would
 		# need parens anyway: `(hooks.new)(...)`.)
 		cmd_new = hooks.new
-		cmd_args = hooks.args
 		spawn! = hooks.spawn!
-		hooks_write! = hooks.write_stdin!
-		hooks_read! = hooks.read_stdout!
-		hooks_kill! = hooks.kill!
 		driver = hooks.driver
 
-		spawn_driver! = |name| spawn!(cmd_args(cmd_new(name), ["run-driver"]))
+		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]))
 
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
@@ -390,9 +1049,9 @@ Playwright :: [].{
 
 		# Bind the child into per-browser closures once. Everything downstream
 		# (initialization and the cleanup on failure) goes through these.
-		write_stdin! = |bytes| hooks_write!(child, bytes)
-		read_stdout! = |len| hooks_read!(child, len)
-		kill! = |{}| hooks_kill!(child)
+		write_stdin! = |bytes| child.write_stdin!(bytes)
+		read_stdout! = |len| child.read_stdout!(len)
+		kill! = |{}| child.kill!()
 
 		# Initialization is wrapped to ensure cleanup on failure.
 		init_result = initialize_browser!(write_stdin!, read_stdout!, kill!, browser_type, headless, timeout, args)
@@ -411,9 +1070,11 @@ Playwright :: [].{
 	## ```
 	## { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch_page! : PlatformHooks(cmd, child, LaunchPageError(s, e)), BrowserType => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e))
+	launch_page! : PlatformHooks(cmd, child, LaunchPageError(s, e)), BrowserType => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchPageError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchPageError(s, e)), child.kill! : child => Try({}, LaunchPageError(s, e))]
 	launch_page! = |hooks, browser_type|
-		Playwright.launch_page_with!(hooks, { browser_type, headless: Bool.True, timeout: TimeoutMilliseconds(30000), args: [], has_touch: Bool.False, permissions: [] })
+		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
+		# bare value instead of a one-field record. Revert when fixed.
+		Playwright.launch_page_with!(hooks, { browser_type: browser_type })
 
 	## Launch a browser with custom options and create a page.
 	##
@@ -422,30 +1083,28 @@ Playwright :: [].{
 	##
 	## ```
 	## { browser, page } = Playwright.launch_page_with!(hooks, {
-	##     browser_type: Chromium(DefaultChannel),
 	##     headless: Bool.False,
 	##     timeout: TimeoutMilliseconds(5000),
-	##     args: [],
-	##     has_touch: Bool.False,
-	##     permissions: [],
 	## })?
 	## ```
-	launch_page_with! : PlatformHooks(cmd, child, LaunchPageError(s, e)), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e))
+	##
+	## Fields left out take the defaults [LaunchPageOptions] declares.
+	launch_page_with! : PlatformHooks(cmd, child, LaunchPageError(s, e)), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchPageError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchPageError(s, e)), child.kill! : child => Try({}, LaunchPageError(s, e))]
 	launch_page_with! = |hooks, { browser_type, headless, timeout, args, has_touch, permissions }| {
 		browser = Playwright.launch_with!(hooks, { browser_type, headless, timeout, args })?
-		context = Playwright.new_context_with!(browser, { has_touch, permissions })?
-		page = Playwright.new_page!(context)?
+		context = browser.new_context_with!({ has_touch, permissions })?
+		page = context.new_page!()?
 		Ok({ browser, page })
 	}
 
 	## Create a new browser context with isolated session state.
 	##
 	## ```
-	## context = Playwright.new_context!(browser)?
+	## context = browser.new_context!()?
 	## ```
 	new_context! : Browser([NewContextError(Str), ..e]) => Try(Context([NewContextError(Str), ..e]), [NewContextError(Str), ..e])
 	new_context! = |browser|
-		Playwright.new_context_with!(browser, { has_touch: Bool.False, permissions: [] })
+		browser.new_context_with!({ has_touch: Bool.False, permissions: [] })
 
 	## Create a new browser context with options.
 	##
@@ -453,7 +1112,7 @@ Playwright :: [].{
 	## `["microphone"]` lets `getUserMedia` resolve without a prompt.
 	##
 	## ```
-	## context = Playwright.new_context_with!(browser, { has_touch: Bool.True, permissions: [] })?
+	## context = browser.new_context_with!({ has_touch: Bool.True })?
 	## ```
 	new_context_with! : Browser([NewContextError(Str), ..e]), ContextOptions => Try(Context([NewContextError(Str), ..e]), [NewContextError(Str), ..e])
 	new_context_with! = |browser, { has_touch, permissions }| {
@@ -469,14 +1128,14 @@ Playwright :: [].{
 
 		match response.error {
 			Ok(err) => Err(NewContextError(err.error.message))
-			Err(_) => Ok({ browser, context_guid, has_touch })
+			Err(_) => Ok(Context.{ browser, context_guid, has_touch })
 		}
 	}
 
 	## Create a new page (tab) in the browser context.
 	##
 	## ```
-	## page = Playwright.new_page!(context)?
+	## page = context.new_page!()?
 	## ```
 	new_page! : Context([NewPageError(Str), ..e]) => Try(Page([NewPageError(Str), ..e]), [NewPageError(Str), ..e])
 	new_page! = |context| {
@@ -492,7 +1151,7 @@ Playwright :: [].{
 
 		match response.error {
 			Ok(err) => Err(NewPageError(err.error.message))
-			Err(_) => Ok({ context, page_guid, frame_guid })
+			Err(_) => Ok(Page.{ context, page_guid, frame_guid })
 		}
 	}
 
@@ -538,14 +1197,7 @@ Playwright :: [].{
 	## text = Playwright.text_content!(page, "h1")?
 	## ```
 	text_content! : Page([TextContentNotFound, TextContentError(Str), DecodeError, ..e]), Str => Try(Str, [TextContentNotFound, TextContentError(Str), DecodeError, ..e])
-	text_content! = |page, selector| {
-		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "textContent", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| TextContentError(m))? {
-			Ok(value) => Ok(value)
-			Err(ValueIsNull) => Err(TextContentNotFound)
-		}
-	}
+	text_content! = |page, selector| text_content_impl!(page, selector, Bool.False)
 
 	## Get the value of an input or textarea.
 	##
@@ -553,11 +1205,7 @@ Playwright :: [].{
 	## value = Playwright.input_value!(page, "#email")?
 	## ```
 	input_value! : Page([InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e]), Str => Try(Str, [InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e])
-	input_value! = |page, selector| {
-		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "inputValue", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| InputValueError(m), InputValueNotFound)
-	}
+	input_value! = |page, selector| input_value_impl!(page, selector, Bool.False)
 
 	## Get an attribute value from an element.
 	##
@@ -565,14 +1213,7 @@ Playwright :: [].{
 	## href = Playwright.get_attribute!(page, "a.nav-link", "href")?
 	## ```
 	get_attribute! : Page([AttributeNotFound, AttributeError(Str), DecodeError, ..e]), Str, Str => Try(Str, [AttributeNotFound, AttributeError(Str), DecodeError, ..e])
-	get_attribute! = |page, selector, attribute_name| {
-		msg : GetAttributeMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "getAttribute", params: { selector, name: attribute_name, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| AttributeError(m))? {
-			Ok(value) => Ok(value)
-			Err(ValueIsNull) => Err(AttributeNotFound)
-		}
-	}
+	get_attribute! = |page, selector, attribute_name| get_attribute_impl!(page, selector, attribute_name, Bool.False)
 
 	## Click an element.
 	##
@@ -580,11 +1221,7 @@ Playwright :: [].{
 	## Playwright.click!(page, "button#submit")?
 	## ```
 	click! : Page([ClickError(Str), ..e]), Str => Try({}, [ClickError(Str), ..e])
-	click! = |page, selector| {
-		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "click", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| ClickError(m))
-	}
+	click! = |page, selector| click_impl!(page, selector, Bool.False)
 
 	## Check a checkbox or radio button. If already checked, this is a no-op.
 	## Sets the checked state via JS and dispatches `input` + `change` events.
@@ -616,29 +1253,7 @@ Playwright :: [].{
 	## Playwright.set_checked!(page, "#terms", Bool.True)?
 	## ```
 	set_checked! : Page([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]), Str, Bool => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
-	set_checked! = |page, selector, desired| {
-		desired_str = if desired "true" else "false"
-		# `Json.to_str` emits a quoted, fully escaped literal, so a selector
-		# containing quotes or backslashes (`input[type="checkbox"]`, which is
-		# the form most people write) survives the trip into JS source.
-		selector_js = Json.to_str(selector)
-		js =
-			\\(() => {
-			\\    const el = document.querySelector(${selector_js});
-			\\    if (!el) return 'ElementNotFound';
-			\\    if (el.checked === ${desired_str}) return 'ok';
-			\\    el.checked = ${desired_str};
-			\\    el.dispatchEvent(new Event('input', {bubbles: true}));
-			\\    el.dispatchEvent(new Event('change', {bubbles: true}));
-			\\    return 'ok';
-			\\})()
-		result = Playwright.evaluate!(page, js)?
-		if result == "ok" {
-			Ok({})
-		} else {
-			Err(CheckError(result))
-		}
-	}
+	set_checked! = |page, selector, desired| set_checked_impl!(page, selector, desired, Bool.False)
 
 	## Set the value of an input or textarea directly, without individual key events.
 	## Use [key_type!] if the app relies on keydown/keyup events.
@@ -650,11 +1265,7 @@ Playwright :: [].{
 	## Playwright.fill!(page, "#email", "user@example.com")?
 	## ```
 	fill! : Page([FillError(Str), ..e]), Str, Str => Try({}, [FillError(Str), ..e])
-	fill! = |page, selector, value| {
-		msg : FillMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "fill", params: { selector, value, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| FillError(m))
-	}
+	fill! = |page, selector, value| fill_impl!(page, selector, value, Bool.False)
 
 	## Set files for a file input element. Accepts either file paths or in-memory buffers.
 	##
@@ -727,11 +1338,7 @@ Playwright :: [].{
 	## Playwright.hover!(page, ".dropdown-trigger")?
 	## ```
 	hover! : Page([HoverError(Str), ..e]), Str => Try({}, [HoverError(Str), ..e])
-	hover! = |page, selector| {
-		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "hover", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| HoverError(m))
-	}
+	hover! = |page, selector| hover_impl!(page, selector, Bool.False)
 
 	## Check if an element is visible. Returns immediately without waiting.
 	##
@@ -739,22 +1346,7 @@ Playwright :: [].{
 	## is_shown = Playwright.is_visible!(page, "#modal")?
 	## ```
 	is_visible! : Page([IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e]), Str => Try(Bool, [IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e])
-	is_visible! = |page, selector| {
-		msg : SelectorOnlyMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "isVisible", params: { selector }, metadata: {} }
-		read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(msg)))?
-
-		response = read_until_bool_response!(read_child!, msg_id)?
-
-		match response.error {
-			Ok(err) => Err(IsVisibleError(err.error.message))
-			Err(_) =>
-				match response.result {
-					Ok(result) => Ok(result.value)
-					Err(_) => Err(IsVisibleNoResult)
-				}
-			}
-	}
+	is_visible! = |page, selector| is_visible_impl!(page, selector, Bool.False)
 
 	## Wait for an element to reach a specified state.
 	##
@@ -766,18 +1358,7 @@ Playwright :: [].{
 	## Playwright.wait_for!(page, "text=Loading...", Hidden)?
 	## ```
 	wait_for! : Page([WaitForTimeout(Str), ..e]), Str, WaitForState => Try({}, [WaitForTimeout(Str), ..e])
-	wait_for! = |page, selector, state| {
-		state_str = match state {
-			Visible => "visible"
-			Hidden => "hidden"
-			Attached => "attached"
-			Detached => "detached"
-		}
-
-		msg : WaitForSelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "waitForSelector", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), state: state_str }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| WaitForTimeout(m))
-	}
+	wait_for! = |page, selector, state| wait_for_impl!(page, selector, state, Bool.False)
 
 	## Count elements matching a selector. Returns `0` if none match.
 	##
@@ -855,49 +1436,7 @@ Playwright :: [].{
 	## center_y = box.y + box.height / 2.0
 	## ```
 	bounding_box! : Page([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]), Str => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
-	bounding_box! = |page, selector| {
-		# Wait for element to be visible first (matches Playwright's auto-wait behavior)
-		Playwright.wait_for!(page, selector, Visible)?
-
-		# Query for the element to get its element handle guid
-		query_msg : SelectorOnlyMessage
-		query_msg = { id: msg_id, guid: page.frame_guid, method: "querySelector", params: { selector }, metadata: {} }
-		read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(query_msg)))?
-
-		element_response = read_until_element_handle_response!(read_child!, msg_id)?
-
-		match element_response.error {
-			Ok(err) => Err(BoundingBoxError(err.error.message))
-			Err(_) =>
-				match element_response.result {
-					Ok(result) =>
-						match result.element {
-							Ok(element_ref) => {
-								box_msg : ElementSimpleMessage
-								box_msg = { id: msg_id, guid: element_ref.guid, method: "boundingBox", params: {}, metadata: {} }
-								box_read! = send_to_page!(page, Str.to_utf8(Json.to_str(box_msg)))?
-
-								box_response = read_until_bounding_box_response!(box_read!, msg_id)?
-
-								match box_response.error {
-									Ok(box_err) => Err(BoundingBoxError(box_err.error.message))
-									Err(_) =>
-										match box_response.result {
-											Ok(box_result) =>
-												match box_result.value {
-													Ok(box) => Ok({ x: box.x, y: box.y, width: box.width, height: box.height })
-													Err(_) => Err(ElementNotVisible)
-												}
-											Err(_) => Err(ElementNotVisible)
-										}
-									}
-							}
-							Err(_) => Err(ElementNotFound)
-						}
-					Err(_) => Err(ElementNotFound)
-				}
-			}
-	}
+	bounding_box! = |page, selector| bounding_box_impl!(page, selector, Bool.False)
 
 	## Tap an element. Requires `has_touch: Bool.True` context.
 	##
@@ -907,7 +1446,7 @@ Playwright :: [].{
 	tap! : Page([TapError(Str), ..e]), Str => Try({}, [TapError(Str), ..e])
 	tap! = |page, selector| {
 		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "tap", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
+		msg = { id: msg_id, guid: page.frame_guid, method: "tap", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict: Bool.False }, metadata: {} }
 		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| TapError(m))
 	}
 
@@ -1223,7 +1762,7 @@ Playwright :: [].{
 	## Close the browser and terminate the driver process.
 	##
 	## ```
-	## Playwright.close!(browser)?
+	## browser.close!()?
 	## ```
 	close! : Browser(err) => Try({}, [CloseFailed(Str), ..e])
 	close! = |browser| {
@@ -1263,6 +1802,187 @@ Playwright :: [].{
 			Err(e) => Err(CloseFailed(Str.inspect(e)))
 		}
 	}
+
+	## A checkable expectation about an [Element], [Elements] or [Page],
+	## built by their claim methods ([Element.has_text], [Elements.has_count],
+	## [Page.has_title], ...) and run by [assert!] or [assert_with!]. Building
+	## a claim is pure and sends nothing to the driver, so claims are plain
+	## values: name one, pass it around, assert it as often as needed.
+	Claim(err) := {
+		run! : AssertTimeout => Try({}, err),
+	}
+
+	## Where a claim's re-check deadline comes from: the page's [Timeout]
+	## (what [assert!] uses), a per-assert override, or no limit at all.
+	## `NoTimeout` re-checks forever, so a claim that never holds hangs the
+	## test: reserve it for claims something else is guaranteed to resolve.
+	AssertTimeout : [PageTimeout, TimeoutMilliseconds(U64), NoTimeout]
+
+	## Options for [assert_with!]. Every field carries a default, so a call
+	## spells only what it changes, the way [LaunchOptions] describes.
+	##
+	## `label` is prepended to [AssertionFailed]'s message, naming the intent
+	## a bare selector cannot: with several asserts on one selector in a test,
+	## `label: "listener detached"` says which claim failed and why it
+	## matters.
+	AssertOptions : {
+		timeout : AssertTimeout ?? PageTimeout,
+		label : Str ?? "",
+	}
+
+	## Check a claim against the live page.
+	##
+	## ```
+	## assert!(page.find("h1").has_text("Welcome"))?
+	## assert!(page.find("h1").not_has_text("Error"))?
+	## assert!(page.find_all("nav a").has_count(5))?
+	## assert!(page.find_all(".item").none_contains_text("Error"))?
+	## assert!(page.has_title("Checkout"))?
+	## ```
+	assert! : Claim([AssertionFailed(Str), ..e]) => Try({}, [AssertionFailed(Str), ..e])
+	assert! = |claim| (claim.run!)(PageTimeout)
+
+	## [assert!], with options: a per-assert timeout, a label naming the
+	## claim's intent in its failure message, or both.
+	##
+	## ```
+	## assert_with!(page.find("h1").exists(), { timeout: TimeoutMilliseconds(5000) })?
+	## assert_with!(page.find("#keys-seen").has_text("Keys seen: 5"), { label: "listener detached" })?
+	## ```
+	##
+	## The timeout bounds the driver-backed claims exactly. The quantified
+	## claims ([Elements.all_has_text] and friends) judge a single read, as
+	## their docs describe, so for them it bounds each read rather than the
+	## claim as a whole.
+	assert_with! : Claim([AssertionFailed(Str), ..e]), AssertOptions => Try({}, [AssertionFailed(Str), ..e])
+	assert_with! = |claim, { timeout, label }|
+		match (claim.run!)(timeout) {
+			Ok({}) => Ok({})
+			Err(AssertionFailed(msg)) if !label.is_empty() => Err(AssertionFailed("${label}: ${msg}"))
+			Err(other) => Err(other)
+		}
+
+	## Whether a quantified claim must hold for every match, for at least
+	## one, or for none of them.
+	Quantifier : [All, Any, None]
+
+	## The driver-backed quantified claims: a quantifier over a property the
+	## selector engine can express (text, visibility) is a retried count
+	## claim on the selector composed with a filter engine. `filter` picks
+	## the matches satisfying the property, `counter_filter` the
+	## counterexamples.
+
+	filtered_any : Elements(AssertError(e)), Str, Str -> Claim(AssertError(e))
+	filtered_any = |els, filter, want| Claim.{
+		run!: |t| expect_count_impl!(els.page, t, "${els.selector} >> ${filter}", 0, Bool.True, |_r|
+			"${els.selector}: expected some match ${want}, but none did"),
+	}
+
+	filtered_none : Elements(AssertError(e)), Str, Str -> Claim(AssertError(e))
+	filtered_none = |els, filter, want| Claim.{
+		run!: |t| expect_count_impl!(els.page, t, "${els.selector} >> ${filter}", 0, Bool.False, |r| match r {
+			Received(got) => "${els.selector}: expected no match ${want}, but ${got} did"
+			_ => "${els.selector}: expected no match ${want}"
+		}),
+	}
+
+	filtered_all : Elements(AssertError(e)), Str, Str -> Claim(AssertError(e))
+	filtered_all = |els, counter_filter, want| Claim.{
+		# Non-vacuous, so an empty set fails: two sequential retried checks,
+		# like two asserts in a row. First that anything matches at all, then
+		# that no counterexample does. Each check waits on its own, so a
+		# claim that never holds can take up to two timeouts.
+		run!: |t| {
+			expect_count_impl!(els.page, t, els.selector, 0, Bool.True, |_r|
+				"${els.selector}: expected every match ${want}, but nothing matched the selector")?
+			expect_count_impl!(els.page, t, "${els.selector} >> ${counter_filter}", 0, Bool.False, |r| match r {
+				Received(got) => "${els.selector}: expected every match ${want}, but ${got} did not"
+				_ => "${els.selector}: expected every match ${want}"
+			})
+		},
+	}
+
+	## Build the client-side quantified claims from one value read per match
+	## plus a quantifier. One helper per read the claims are judged on.
+
+	value_claim : Elements(ValueAssertError(e)), Quantifier, Str, (Str -> Bool) -> Claim(ValueAssertError(e))
+	value_claim = |els, quantifier, want, ok| Claim.{
+		run!: |_t| {
+			n = els.count!()?
+			got = Playwright.collect!(els, 0, n, [], |el| el.value!())?
+			Playwright.judge(els.selector, quantifier, got, want, ok)
+		},
+	}
+
+	attr_claim : Elements(AttrAssertError(e)), Quantifier, Str, Str, (Str -> Bool) -> Claim(AttrAssertError(e))
+	attr_claim = |els, quantifier, name, want, ok| Claim.{
+		run!: |_t| {
+			n = els.count!()?
+			got = Playwright.collect!(els, 0, n, [], |el| el.attribute!(name))?
+			Playwright.judge(els.selector, quantifier, got, want, ok)
+		},
+	}
+
+	## Apply a quantifier to the values read from each match.
+	##
+	## An empty set is handled differently per quantifier, and deliberately
+	## so. `All` and `Any` claim something is present and has a property, so
+	## an empty set fails: the usual reason a set is empty is a selector
+	## typo, and passing vacuously would make the test assert nothing. `None`
+	## claims an absence, and an empty set is the strongest form of that
+	## absence, so it passes.
+	judge : Str, Quantifier, List(Str), Str, (Str -> Bool) -> Try({}, [AssertionFailed(Str), ..e])
+	judge = |selector, quantifier, got, want, ok|
+		if List.is_empty(got) {
+			match quantifier {
+				None => Ok({})
+				_ => Err(AssertionFailed("${selector}: expected ${want}, but nothing matched the selector"))
+			}
+		} else {
+			match quantifier {
+				All =>
+					if List.all(got, ok) {
+						Ok({})
+					} else {
+						Err(AssertionFailed("${selector}: expected every match ${want}, got ${Str.inspect(got)}"))
+					}
+				Any =>
+					if List.any(got, ok) {
+						Ok({})
+					} else {
+						Err(AssertionFailed("${selector}: expected some match ${want}, got ${Str.inspect(got)}"))
+					}
+				None =>
+					if List.any(got, ok) {
+						Err(AssertionFailed("${selector}: expected no match ${want}, got ${Str.inspect(got)}"))
+					} else {
+						Ok({})
+					}
+			}
+		}
+
+	## Read one value per match, in document order. Indexes straight into the
+	## `>> nth=` selector rather than going through [Elements.nth], which takes
+	## an I64 the loop counter would have to be converted to.
+	collect! : Elements(err), U64, U64, List(a), (Element(err) => Try(a, err)) => Try(List(a), err)
+	collect! = |els, i, n, acc, read!|
+		if i >= n {
+			Ok(acc)
+		} else {
+			el = Element.{ page: els.page, selector: "${els.selector} >> nth=${i.to_str()}", which: Only }
+			value = read!(el)?
+			collect!(els, i + 1, n, List.append(acc, value), read!)
+		}
+
+	## The selector an [Element] actually sends to the driver. `Nth` becomes
+	## Playwright's own `>> nth=` selector suffix, which counts from the end
+	## for negative indices.
+	resolve : Element(err) -> Str
+	resolve = |el|
+		match el.which {
+			Only => el.selector
+			Nth(i) => "${el.selector} >> nth=${i.to_str()}"
+		}
 }
 
 # Optional fields are `Try(x, [Missing])`: the builtin JSON parser decodes an
@@ -1395,6 +2115,34 @@ ElementHandleResult : {
 	element : Try(ResponseRef, [Missing]),
 }
 
+# The wire shape of a failed expect call: an error response with the details
+# beside it. A successful expect is a plain empty-result response, so only
+# the error side needs fields.
+ExpectResponseMessage : {
+	id : Try(U64, [Missing]),
+	error : Try(ResponseError, [Missing]),
+	errorDetails : Try(ExpectErrorDetails, [Missing]),
+}
+
+ExpectErrorDetails : {
+	timedOut : Try(Bool, [Missing]),
+	customErrorMessage : Try(Str, [Missing]),
+}
+
+# One shape per serialized form of `errorDetails.received.value`, every field
+# required so that exactly the matching form decodes (see expect_received):
+# {"s"} strings and state words, {"n"} counts, {"b"} booleans,
+# {"v"} null/undefined, {"a"} text lists.
+ExpectReceivedStr : { errorDetails : { received : { value : { s : Str } } } }
+
+ExpectReceivedInt : { errorDetails : { received : { value : { n : U64 } } } }
+
+ExpectReceivedBool : { errorDetails : { received : { value : { b : Bool } } } }
+
+ExpectReceivedNull : { errorDetails : { received : { value : { v : Str } } } }
+
+ExpectReceivedTexts : { errorDetails : { received : { value : { a : List({ s : Str }) } } } }
+
 InitializeMessage : {
 	id : U64,
 	guid : Str,
@@ -1482,6 +2230,7 @@ SelectorMessage : {
 SelectorParams : {
 	selector : Str,
 	timeout : U64,
+	strict : Bool,
 }
 
 WaitForSelectorMessage : {
@@ -1496,6 +2245,7 @@ WaitForSelectorParams : {
 	selector : Str,
 	timeout : U64,
 	state : Str,
+	strict : Bool,
 }
 
 FillMessage : {
@@ -1510,6 +2260,7 @@ FillParams : {
 	selector : Str,
 	value : Str,
 	timeout : U64,
+	strict : Bool,
 }
 
 SetInputFilesPathsMessage : {
@@ -1554,6 +2305,22 @@ SelectorOnlyParams : {
 	selector : Str,
 }
 
+# For the selector-only protocol methods that accept a strictness flag
+# (isVisible, querySelector). queryCount does not, and stays on
+# SelectorOnlyMessage.
+StrictSelectorMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : StrictSelectorParams,
+	metadata : {},
+}
+
+StrictSelectorParams : {
+	selector : Str,
+	strict : Bool,
+}
+
 GetAttributeMessage : {
 	id : U64,
 	guid : Str,
@@ -1565,6 +2332,155 @@ GetAttributeMessage : {
 GetAttributeParams : {
 	selector : Str,
 	name : Str,
+	timeout : U64,
+	strict : Bool,
+}
+
+# The expect message comes in a few structurally different shapes because the
+# driver's validator rejects null fields: which of expectedText,
+# expressionArg, expectedNumber and expectedValue are present depends on the
+# expression, so each combination is its own message type.
+
+ExpectedTextParam : {
+	string : Str,
+	matchSubstring : Bool,
+	normalizeWhiteSpace : Bool,
+}
+
+ExpectedRegexParam : {
+	regexSource : Str,
+	regexFlags : Str,
+}
+
+ExpectRegexMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectRegexParams,
+	metadata : {},
+}
+
+ExpectRegexParams : {
+	selector : Str,
+	expression : Str,
+	expectedText : List(ExpectedRegexParam),
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectPageRegexMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectPageRegexParams,
+	metadata : {},
+}
+
+ExpectPageRegexParams : {
+	expression : Str,
+	expectedText : List(ExpectedRegexParam),
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectTextMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectTextParams,
+	metadata : {},
+}
+
+ExpectTextParams : {
+	selector : Str,
+	expression : Str,
+	expectedText : List(ExpectedTextParam),
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectAttributeMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectAttributeParams,
+	metadata : {},
+}
+
+ExpectAttributeParams : {
+	selector : Str,
+	expression : Str,
+	expressionArg : Str,
+	expectedText : List(ExpectedTextParam),
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectStateMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectStateParams,
+	metadata : {},
+}
+
+ExpectStateParams : {
+	selector : Str,
+	expression : Str,
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectCheckedMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectCheckedParams,
+	metadata : {},
+}
+
+ExpectCheckedParams : {
+	selector : Str,
+	expression : Str,
+	expectedValue : ExpectCheckedValue,
+	isNot : Bool,
+	timeout : U64,
+}
+
+# The wire form of the serialized argument {checked: Bool}.
+ExpectCheckedValue : {
+	value : { o : List({ k : Str, v : { b : Bool } }) },
+	handles : List({}),
+}
+
+ExpectCountMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectCountParams,
+	metadata : {},
+}
+
+ExpectCountParams : {
+	selector : Str,
+	expression : Str,
+	expectedNumber : U64,
+	isNot : Bool,
+	timeout : U64,
+}
+
+ExpectPageTextMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : ExpectPageTextParams,
+	metadata : {},
+}
+
+ExpectPageTextParams : {
+	expression : Str,
+	expectedText : List(ExpectedTextParam),
+	isNot : Bool,
 	timeout : U64,
 }
 
@@ -1846,8 +2762,38 @@ key_combo_str = |key, modifiers| {
 	}
 }
 
+# Escape a literal for use inside a /.../ regex in a selector engine: regex
+# metacharacters and the delimiting slash get a backslash, and whitespace
+# control characters become their escape sequences so the selector stays one
+# line. Byte-level is safe here because every escaped character is ASCII and
+# UTF-8 continuation bytes never collide with ASCII.
+regex_escape : Str -> Str
+regex_escape = |s| {
+	bytes = Str.to_utf8(s).fold([], |acc, b|
+		match b {
+			9 => acc.concat([92, 116])
+			10 => acc.concat([92, 110])
+			13 => acc.concat([92, 114])
+			36 | 40 | 41 | 42 | 43 | 46 | 47 | 63 | 91 | 92 | 93 | 94 | 123 | 124 | 125 => acc.concat([92, b])
+			_ => acc.append(b)
+		})
+	match Str.from_utf8(bytes) {
+		Ok(escaped) => escaped
+		# Unreachable: the input was a Str and only ASCII was inserted.
+		Err(_) => s
+	}
+}
+
 timeout_to_ms : Playwright.Timeout -> U64
 timeout_to_ms = |t| match t {
+	TimeoutMilliseconds(ms) => ms
+	NoTimeout => 0
+}
+
+# The effective deadline for one assert, in the driver's terms: 0 means poll
+# forever.
+assert_timeout_ms = |page, t| match t {
+	PageTimeout => timeout_to_ms(page.context.browser.timeout)
 	TimeoutMilliseconds(ms) => ms
 	NoTimeout => 0
 }
@@ -1882,6 +2828,308 @@ channel_to_name = |channel| match channel {
 # response, map a driver error into the command's own tag". These helpers below
 # hold that shape once, so the per-command functions only build their message
 # and name their error tag.
+
+# The strict-aware bodies of the selector commands. The page-level methods
+# pass `Bool.False`, keeping Playwright's own page.click-style behavior where
+# a multi-match selector acts on the first match. [Element] methods pass
+# `Bool.True`, so a selector that matches more than one element is an error
+# instead of a silent action on the first.
+
+click_impl! = |page, selector, strict| {
+	msg : SelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "click", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| ClickError(m))
+}
+
+fill_impl! = |page, selector, value, strict| {
+	msg : FillMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "fill", params: { selector, value, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| FillError(m))
+}
+
+hover_impl! = |page, selector, strict| {
+	msg : SelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "hover", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| HoverError(m))
+}
+
+text_content_impl! = |page, selector, strict| {
+	msg : SelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "textContent", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| TextContentError(m))? {
+		Ok(value) => Ok(value)
+		Err(ValueIsNull) => Err(TextContentNotFound)
+	}
+}
+
+input_value_impl! = |page, selector, strict| {
+	msg : SelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "inputValue", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	exec_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| InputValueError(m), InputValueNotFound)
+}
+
+get_attribute_impl! = |page, selector, attribute_name, strict| {
+	msg : GetAttributeMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "getAttribute", params: { selector, name: attribute_name, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
+	match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| AttributeError(m))? {
+		Ok(value) => Ok(value)
+		Err(ValueIsNull) => Err(AttributeNotFound)
+	}
+}
+
+is_visible_impl! = |page, selector, strict| {
+	msg : StrictSelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "isVisible", params: { selector, strict }, metadata: {} }
+	read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(msg)))?
+
+	response = read_until_bool_response!(read_child!, msg_id)?
+
+	match response.error {
+		Ok(err) => Err(IsVisibleError(err.error.message))
+		Err(_) =>
+			match response.result {
+				Ok(result) => Ok(result.value)
+				Err(_) => Err(IsVisibleNoResult)
+			}
+		}
+}
+
+wait_for_impl! = |page, selector, state, strict| {
+	state_str = match state {
+		Visible => "visible"
+		Hidden => "hidden"
+		Attached => "attached"
+		Detached => "detached"
+	}
+
+	msg : WaitForSelectorMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "waitForSelector", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), state: state_str, strict }, metadata: {} }
+	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| WaitForTimeout(m))
+}
+
+set_checked_impl! = |page, selector, desired, strict| {
+	desired_str = if desired "true" else "false"
+	strict_str = if strict "true" else "false"
+	# `Json.to_str` emits a quoted, fully escaped literal, so a selector
+	# containing quotes or backslashes (`input[type="checkbox"]`, which is
+	# the form most people write) survives the trip into JS source.
+	selector_js = Json.to_str(selector)
+	js =
+		\\(() => {
+		\\    const els = document.querySelectorAll(${selector_js});
+		\\    if (els.length === 0) return 'ElementNotFound';
+		\\    if (${strict_str} && els.length > 1) return 'strict mode violation: ' + els.length + ' elements match ' + ${selector_js};
+		\\    const el = els[0];
+		\\    if (el.checked === ${desired_str}) return 'ok';
+		\\    el.checked = ${desired_str};
+		\\    el.dispatchEvent(new Event('input', {bubbles: true}));
+		\\    el.dispatchEvent(new Event('change', {bubbles: true}));
+		\\    return 'ok';
+		\\})()
+	result = Playwright.evaluate!(page, js)?
+	if result == "ok" {
+		Ok({})
+	} else {
+		Err(CheckError(result))
+	}
+}
+
+bounding_box_impl! = |page, selector, strict| {
+	# Wait for element to be visible first (matches Playwright's auto-wait behavior)
+	wait_for_impl!(page, selector, Visible, strict)?
+
+	# Query for the element to get its element handle guid
+	query_msg : StrictSelectorMessage
+	query_msg = { id: msg_id, guid: page.frame_guid, method: "querySelector", params: { selector, strict }, metadata: {} }
+	read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(query_msg)))?
+
+	element_response = read_until_element_handle_response!(read_child!, msg_id)?
+
+	match element_response.error {
+		Ok(err) => Err(BoundingBoxError(err.error.message))
+		Err(_) =>
+			match element_response.result {
+				Ok(result) =>
+					match result.element {
+						Ok(element_ref) => {
+							box_msg : ElementSimpleMessage
+							box_msg = { id: msg_id, guid: element_ref.guid, method: "boundingBox", params: {}, metadata: {} }
+							box_read! = send_to_page!(page, Str.to_utf8(Json.to_str(box_msg)))?
+
+							box_response = read_until_bounding_box_response!(box_read!, msg_id)?
+
+							match box_response.error {
+								Ok(box_err) => Err(BoundingBoxError(box_err.error.message))
+								Err(_) =>
+									match box_response.result {
+										Ok(box_result) =>
+											match box_result.value {
+												Ok(box) => Ok({ x: box.x, y: box.y, width: box.width, height: box.height })
+												Err(_) => Err(ElementNotVisible)
+											}
+										Err(_) => Err(ElementNotVisible)
+									}
+								}
+						}
+						Err(_) => Err(ElementNotFound)
+					}
+				Err(_) => Err(ElementNotFound)
+			}
+		}
+}
+
+# The expect-based assertion bodies. Each is one `expect` call on the frame,
+# the same protocol method every official Playwright client's assertions go
+# through: the driver re-checks the page until the expectation holds or the
+# timeout expires, and enforces strictness for single-element expressions.
+#
+# The response carries no result beyond success. A failure is an error
+# response with the details in `errorDetails` beside it: the last received
+# value, whether the timeout expired, and a message of its own for usage
+# errors like strict mode violations. exec_expect! turns a timed-out check
+# into AssertionFailed with a message the caller builds from the received
+# value, and everything else into ExpectError with the driver's message.
+
+expect_text_impl! = |page, t, selector, expression, want, match_substring, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectTextMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: Bool.True }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_value_impl! = |page, t, selector, want, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectTextMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.value", expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_texts_impl! = |page, t, selector, wants, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	expected = List.map(wants, |w| { string: w, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.True })
+	msg : ExpectTextMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.text.array", expectedText: expected, isNot: Bool.False, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_attribute_impl! = |page, t, selector, attribute_name, want, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectAttributeMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.attribute.value", expressionArg: attribute_name, expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_state_impl! = |page, t, selector, expression, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectStateMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_checked_impl! = |page, t, selector, desired, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	# to.be.checked reads its target state from expectedValue, which travels
+	# as a protocol-serialized {checked: Bool} object.
+	msg : ExpectCheckedMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.be.checked", expectedValue: { value: { o: [{ k: "checked", v: { b: desired } }] }, handles: [] }, isNot: Bool.False, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_count_impl! = |page, t, selector, want, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectCountMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.count", expectedNumber: want, isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_regex_impl! = |page, t, selector, expression, regex_source, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectRegexMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_page_regex_impl! = |page, t, expression, regex_source, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	msg : ExpectPageRegexMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+expect_page_text_impl! = |page, t, expression, want, match_substring, normalize, is_not, to_msg| {
+	timeout_ms = assert_timeout_ms(page, t)
+	# Title and URL are claims about the page, so the message carries no
+	# selector: the driver reads document.title / location.href directly.
+	msg : ExpectPageTextMessage
+	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: normalize }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
+	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+}
+
+exec_expect! = |page, timeout_ms, message_bytes, to_msg| {
+	browser = page.context.browser
+	write_child! = browser.write_stdin!
+	read_child! = browser.read_stdout!
+	send_message!(write_child!, message_bytes)?
+	bytes = read_until_id!(read_child!, msg_id, |b| Ok(b))?
+
+	match decode_expect_response(bytes) {
+		Err(_) => Err(UnexpectedExpectResponse(raw_message(bytes)))
+		Ok(response) =>
+			match response.error {
+				Err(_) => Ok({})
+				Ok(err) => {
+					details =
+						match response.errorDetails {
+							Ok(d) => d
+							Err(_) => { timedOut: Err(Missing), customErrorMessage: Err(Missing) }
+						}
+					timed_out = details.timedOut.ok_or(Bool.False)
+					if timed_out {
+						Err(AssertionFailed("${to_msg(expect_received(bytes))} (timed out after ${timeout_ms.to_str()}ms)"))
+					} else {
+						match details.customErrorMessage {
+							Ok(m) => Err(ExpectError(m))
+							Err(_) => Err(ExpectError(err.error.message))
+						}
+					}
+				}
+			}
+	}
+}
+
+## The last value the driver saw before giving up, extracted for the failure
+## message. Each serialized shape gets its own fully-required decode of the
+## raw response, tried in turn like decode_nullable_string_value: one deep
+## record full of optional fields sends the JSON decoder's specialization
+## into a blowup, and routing by what decodes is the established pattern here
+## anyway. `Received` carries strings and state words raw and lists
+## pre-rendered, so each assertion picks the quoting that reads best.
+## `NullReceived` is a null the driver actually read (a missing attribute),
+## `NoElement` is nothing matching the selector.
+expect_received = |bytes|
+	match decode_expect_received_str(bytes) {
+		Ok(m) => Received(m.errorDetails.received.value.s)
+		Err(_) =>
+			match decode_expect_received_int(bytes) {
+				Ok(m) => Received(m.errorDetails.received.value.n.to_str())
+				Err(_) =>
+					match decode_expect_received_bool(bytes) {
+						Ok(m) => Received(if m.errorDetails.received.value.b "true" else "false")
+						Err(_) =>
+							match decode_expect_received_texts(bytes) {
+								Ok(m) => {
+									rendered = List.map(m.errorDetails.received.value.a, |item| "\"${item.s}\"")
+									Received("[${Str.join_with(rendered, ", ")}]")
+								}
+								Err(_) =>
+									match decode_expect_received_null(bytes) {
+										Ok(m) => if m.errorDetails.received.value.v == "null" NullReceived else NoElement
+										Err(_) => NoElement
+									}
+							}
+					}
+			}
+	}
 
 ## Send a command message and wait for its response. The shared tail of every
 ## command that returns nothing: a driver error goes through `to_err`.
@@ -2045,6 +3293,24 @@ decode_bounding_box_response = |bytes| decode_json(bytes)
 decode_element_handle_response : List(U8) -> Try(ElementHandleResponseMessage, [DecodeError])
 decode_element_handle_response = |bytes| decode_json(bytes)
 
+decode_expect_response : List(U8) -> Try(ExpectResponseMessage, [DecodeError])
+decode_expect_response = |bytes| decode_json(bytes)
+
+decode_expect_received_str : List(U8) -> Try(ExpectReceivedStr, [DecodeError])
+decode_expect_received_str = |bytes| decode_json(bytes)
+
+decode_expect_received_int : List(U8) -> Try(ExpectReceivedInt, [DecodeError])
+decode_expect_received_int = |bytes| decode_json(bytes)
+
+decode_expect_received_bool : List(U8) -> Try(ExpectReceivedBool, [DecodeError])
+decode_expect_received_bool = |bytes| decode_json(bytes)
+
+decode_expect_received_null : List(U8) -> Try(ExpectReceivedNull, [DecodeError])
+decode_expect_received_null = |bytes| decode_json(bytes)
+
+decode_expect_received_texts : List(U8) -> Try(ExpectReceivedTexts, [DecodeError])
+decode_expect_received_texts = |bytes| decode_json(bytes)
+
 decode_json = |bytes|
 	match Str.from_utf8(bytes) {
 		Ok(s) => Json.parse(s).map_err(|_| DecodeError)
@@ -2089,7 +3355,7 @@ initialize_browser! = |write_child!, read_child!, kill!, browser_type, headless,
 	_launch_response = read_until_response!(read_child!, 2)?
 
 	# The child-bound closures are punned into the Browser record by name.
-	Ok({
+	Ok(Playwright.Browser.{
 		write_stdin!: write_child!,
 		read_stdout!: read_child!,
 		kill!,

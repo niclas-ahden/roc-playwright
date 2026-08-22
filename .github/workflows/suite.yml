@@ -1,0 +1,159 @@
+name: Suite
+
+# The per-operating-system test matrix, defined once, called by every other
+# workflow.
+#
+# This takes the no-Nix route (a downloaded Roc nightly, npm's Playwright)
+# because Nix has no Windows support, and because that is the route a user of
+# the package is on. A caller picks the compiler and what to test: this
+# checkout's package, a published bundle URL, or a drafted bundle artifact.
+# A red leg reddens the call, so `needs.<job>.result` is the truth. Callers
+# isolate informational legs in their own call and simply don't gate on it.
+
+on:
+  workflow_call:
+    inputs:
+      roc:
+        description: >
+          `pinned` for the nightly that matches the flake's roc-src, or a
+          nightly tag such as `nightly-2026-08-20-9e3980a`.
+        type: string
+        default: pinned
+      label:
+        description: Prefix for the job names, so a caller's legs are tellable apart.
+        type: string
+        required: true
+      opts:
+        description: >
+          JSON array of roc optimization levels (dev, speed, size,
+          interpreter), crossed with `os`. Every test is built with it.
+        type: string
+        default: '["speed"]'
+      os:
+        description: JSON array of runner labels, crossed with `opts`.
+        type: string
+        default: '["ubuntu-24.04", "macos-15", "windows-2025"]'
+      ref:
+        description: Ref to check out. Defaults to whatever triggered the caller.
+        type: string
+        default: ''
+      bundle-url:
+        description: >
+          Point every test at this published bundle instead of at this
+          checkout's package. Tests the released artifact.
+        type: string
+        default: ''
+      bundle-artifact:
+        description: >
+          Workflow artifact holding one *.tar.zst bundle. Each leg serves it
+          on 127.0.0.1 and points every test there; roc allows http to
+          localhost, so it does the download, hash check and unbundle itself.
+          For draft bundles, whose assets need a token. Exclusive with
+          `bundle-url`.
+        type: string
+        default: ''
+
+jobs:
+  platforms:
+    name: ${{ inputs.label }} (${{ matrix.opt }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One red leg must never hide another's result.
+      fail-fast: false
+      matrix:
+        opt: ${{ fromJSON(inputs.opts) }}
+        os: ${{ fromJSON(inputs.os) }}
+    env:
+      # Keep in step with the flake's roc-src and the devShell's
+      # playwright-test (`nix develop -c playwright --version`).
+      PINNED_ROC_TAG: nightly-2026-08-20-9e3980a
+      PLAYWRIGHT_VERSION: 1.61.1
+    steps:
+      # The code under test.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Tooling from the workflow's own ref, so an old release tag (which
+      # may predate these files) can still be tested.
+      - uses: actions/checkout@v4
+        with:
+          path: .ci
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Point every test at the released bundle
+        if: inputs.bundle-url != ''
+        shell: bash
+        run: .ci/.github/scripts/point-at-bundle.sh "${{ inputs.bundle-url }}"
+
+      - name: Download the drafted bundle
+        if: inputs.bundle-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.bundle-artifact }}
+          path: .bundle
+
+      # Background process, survives until the job ends. The test servers
+      # start at 9000, so 8788 is free.
+      - name: Serve the drafted bundle and point every test at it
+        if: inputs.bundle-artifact != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=$(cd .bundle && ls -- *.tar.zst)
+          nohup node .ci/.github/scripts/serve.mjs .bundle 8788 > .bundle-server.log 2>&1 &
+          for _ in $(seq 50); do
+            curl -sfI "http://127.0.0.1:8788/$file" > /dev/null && break
+            sleep 0.2
+          done
+          curl -sfI "http://127.0.0.1:8788/$file" > /dev/null || { cat .bundle-server.log; exit 1; }
+          .ci/.github/scripts/point-at-bundle.sh "http://127.0.0.1:8788/$file"
+
+      - name: Install the Roc nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROC: ${{ inputs.roc }}
+        run: |
+          set -euo pipefail
+          if [ "$ROC" = pinned ]; then
+            ROC_TAG="$PINNED_ROC_TAG"
+          else
+            ROC_TAG="$ROC"
+          fi
+          .ci/.github/scripts/install-roc.sh "$ROC_TAG"
+
+      - name: Install Playwright and its browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g "playwright@$PLAYWRIGHT_VERSION"
+          if [ "$RUNNER_OS" = Linux ]; then
+            playwright install --with-deps chromium firefox webkit
+          else
+            playwright install chromium firefox webkit
+          fi
+          playwright --version
+
+      - name: Run the suite
+        shell: bash
+        env:
+          ROC_OPT: ${{ matrix.opt }}
+        run: roc tests.roc
+
+      # The runner started with no Playwright or node processes, so any
+      # alive now was left by the suite or the runner. The bundle server
+      # (serve.mjs) is ours and is not one of the marks the check looks for.
+      - name: The suite left nothing running
+        shell: bash
+        run: roc tests/leak/check.roc -- none
+
+      # Every browser, every way a program can end. A red step here means a
+      # user of the package is left with browsers running after their
+      # program is gone.
+      - name: Nothing outlives the program
+        shell: bash
+        run: roc tests/leak/check.roc

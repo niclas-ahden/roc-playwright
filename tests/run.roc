@@ -3,7 +3,7 @@
 ## every tests/**/*_test.roc through roc-spec.
 ##
 ## Optional args: a filename pattern (substring) and --fail-fast.
-## Optional env: ROC_SPEC_MAX_WORKERS (default 4).
+## Optional env: ROC_SPEC_MAX_WORKERS (default 4), ROC_OPT (default speed).
 app [main!] {
     pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
     spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
@@ -25,7 +25,7 @@ import spec.TestEnvironment
 effects = {
     spawn_test!: |file, envs|
         Cmd.new(OsStr.utf8("roc"))
-            .args_str(["--opt=speed", file])
+            .args_str(["--opt=${opt!({})}", file])
             .envs_str(envs)
             .spawn!(),
     poll!: Cmd.Child.poll!,
@@ -47,6 +47,14 @@ worker_envs = |index| [
     ("ROC_SPEC_BASE_PORT", base_port.to_str()),
     ("ROC_SPEC_HOST", "localhost"),
 ]
+
+## Optimization level every test is built with.
+opt! : {} => Str
+opt! = |{}|
+    match Env.var_str!(OsStr.from_str("ROC_OPT")) {
+        Ok(val) if val != "" => val
+        _ => "speed"
+    }
 
 max_workers! : {} => U16
 max_workers! = |{}|
