@@ -9,11 +9,12 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    # The revision behind the PINNED_ROC_TAG nightly that
-    # .github/workflows/suite.yml installs. Move the two together: a compiler
-    # only this flake builds is a compiler only one CI job ever runs.
+    # The compiler this repository answers for: the one the dev shell hands
+    # you, the one CI gates on, and the one that builds what a release ships.
+    # CI's per operating system legs resolve their own nightly, so nothing
+    # over there has to move along with this revision.
     roc-src = {
-      url = "github:roc-lang/roc/9e3980a1b9432589b4073e2b20abb04877bc7b05";
+      url = "github:roc-lang/roc/0b590edf70c08422a0f62db52d978729f5d3b103";
       flake = false;
     };
   };
