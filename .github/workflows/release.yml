@@ -4,27 +4,31 @@ name: Release
 #
 #   git tag 0.9.0 && git push origin 0.9.0
 #
-# 1. `gate` is the only requirement: the flake's compiler at --opt=speed
-#    running roc check, roc test, the bundle sanity check and ./tests.roc,
-#    which is the whole Playwright suite. Nothing else gates the draft.
-# 2. `draft` bundles the package and its docs with that same flake compiler
-#    and creates a DRAFT release with starter notes. A human presses Publish.
-# 3. Everything else is the advisory board: the suite on every operating
-#    system, on each nightly worth asking about (the newest one and the one
-#    the previous release recommends, duplicates dropped), from this checkout
-#    at speed, from this checkout on the other backends, and from the drafted
-#    bundle the way a consumer will.
-# 4. `claim` writes the newest nightly that passed speed from both the
-#    checkout and the bundle into the notes' "Compatible with:" line,
-#    preferring latest. When none passed, the notes say nothing is verified
-#    yet, and the daily workflow fills the line in on the first green morning.
-# 5. `playwright` writes the Playwright version into the notes, read from the
-#    pin in setup.sh, which is what every suite leg in this run installs.
+# Two lanes, drawn top and bottom in the graph.
 #
-# The advisory board may be red without blocking anything. Read it, then
-# decide: publish, or throw the run away by deleting its draft.
+# Required is the one check a release needs: the flake's compiler at
+# --opt=speed running roc check, roc test, the bundle sanity check and
+# ./tests.roc, which is the whole Playwright suite. Green there bundles the
+# package and its docs with that same compiler and creates a DRAFT release
+# with starter notes. A human presses Publish. The Playwright version goes
+# into the notes right away, read from the pin in setup.sh, which is what
+# every suite leg in this run installs.
 #
-# Publishing deploys the docs.
+# Optional is the advisory board, which may be red without blocking anything.
+# The suite on every operating system, on each nightly worth asking about,
+# which is the latest Roc and the Roc the previous release recommends (the
+# second is skipped when it is the same one), from this checkout and from the
+# drafted bundle the way a consumer will get it. Speed on the latest Roc and
+# speed on the recommended Roc are calls of their own because a red leg
+# reddens its whole call, and the compatible Roc is picked from those results:
+# the newest nightly that passed speed from both the checkout and the bundle,
+# preferring the latest. It is written into the notes' "Compatible with:"
+# line. When none passed, the notes say nothing is verified yet, and the daily
+# workflow fills the line in on the first green morning. The other backends
+# run for information only.
+#
+# Read the board, then decide: publish, or throw the run away by deleting its
+# draft. Publishing deploys the docs.
 
 on:
   push:
@@ -41,26 +45,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The release gate, under the same compiler that builds the bundle.
-  gate:
+  # Required lane.
+
+  test:
+    name: Required
     uses: niclas-ahden/roc-workflows/.github/workflows/test.yml@v3
 
-  resolve:
-    uses: niclas-ahden/roc-workflows/.github/workflows/resolve-versions.yml@v3
-
   draft:
-    needs: gate
+    name: Draft
+    needs: test
     permissions:
       contents: write
     uses: niclas-ahden/roc-workflows/.github/workflows/draft-release.yml@v3
 
-  # The Playwright half of the compatibility claim. The pin in setup.sh is
-  # part of the release: it is the version every suite leg in this run
-  # installs, so the notes can name it as soon as the draft exists. It never
-  # moves afterwards, unlike the Roc line, which the daily workflow keeps
-  # pushing forward.
-  playwright:
-    name: Name the Playwright version
+  # The pin never moves after the tag, unlike the Roc line, which the daily
+  # workflow keeps pushing forward.
+  playwright-version:
+    name: Write the Playwright version into the notes
     needs: draft
     permissions:
       contents: write
@@ -74,47 +75,57 @@ jobs:
           version=$(sed -n 's/^PLAYWRIGHT_VERSION=//p' .github/scripts/setup.sh)
           .github/scripts/name-playwright.sh "$GITHUB_REF_NAME" "$version"
 
-  # The advisory board. The speed legs feed `claim`, the opts legs are
-  # information only, and a leg whose nightly resolves empty is skipped.
-  latest:
-    needs: resolve
+  # Optional lane.
+
+  # Looks up the latest Roc nightly and the one the previous release
+  # recommends, once, so every leg below tests the same pair.
+  roc-versions:
+    name: 'Optional: look up Roc versions'
+    uses: niclas-ahden/roc-workflows/.github/workflows/resolve-versions.yml@v3
+
+  latest-roc:
+    name: 'Optional: latest Roc'
+    needs: roc-versions
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Latest nightly
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: Tests
       node: true
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh
 
-  latest-opts:
-    needs: resolve
+  latest-roc-other-backends:
+    name: 'Optional: latest Roc, other backends'
+    needs: roc-versions
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Latest nightly
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: Tests
       opts: '["dev", "size", "interpreter"]'
       node: true
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh
 
-  recommended:
-    needs: resolve
-    if: needs.resolve.outputs.recommended != ''
+  recommended-roc:
+    name: 'Optional: recommended Roc'
+    needs: roc-versions
+    if: needs.roc-versions.outputs.recommended != ''
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.recommended }}
-      label: Recommended nightly
+      roc: ${{ needs.roc-versions.outputs.recommended }}
+      label: Tests
       node: true
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh
 
-  recommended-opts:
-    needs: resolve
-    if: needs.resolve.outputs.recommended != ''
+  recommended-roc-other-backends:
+    name: 'Optional: recommended Roc, other backends'
+    needs: roc-versions
+    if: needs.roc-versions.outputs.recommended != ''
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.recommended }}
-      label: Recommended nightly
+      roc: ${{ needs.roc-versions.outputs.recommended }}
+      label: Tests
       opts: '["dev", "size", "interpreter"]'
       node: true
       setup: .github/scripts/setup.sh
@@ -123,33 +134,34 @@ jobs:
   # The consumer's path. roc downloads, hash checks and unbundles the drafted
   # bundle, then the suite runs against it. It catches packaging bugs, and it
   # is the half of the compatibility claim that tests what people install.
-  bundle-latest:
-    needs: [draft, resolve]
+  bundle-on-latest-roc:
+    name: 'Optional: bundle on latest Roc'
+    needs: [draft, roc-versions]
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Drafted bundle, latest nightly
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: Tests
       bundle-artifact: ${{ needs.draft.outputs.artifact }}
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh
 
-  bundle-recommended:
-    needs: [draft, resolve]
-    if: needs.resolve.outputs.recommended != ''
+  bundle-on-recommended-roc:
+    name: 'Optional: bundle on recommended Roc'
+    needs: [draft, roc-versions]
+    if: needs.roc-versions.outputs.recommended != ''
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.recommended }}
-      label: Drafted bundle, recommended nightly
+      roc: ${{ needs.roc-versions.outputs.recommended }}
+      label: Tests
       bundle-artifact: ${{ needs.draft.outputs.artifact }}
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh
 
-  # The newest nightly whose speed legs went green from both angles,
-  # preferring latest. A duplicate nightly was resolved to empty, so its
-  # verdict lives in the leg above it.
-  choose:
-    name: Choose the nightly to claim
-    needs: [resolve, latest, recommended, bundle-latest, bundle-recommended]
+  # A duplicate recommended Roc was resolved to empty, so its verdict lives in
+  # the latest Roc legs.
+  compatible-roc:
+    name: 'Optional: pick the compatible Roc'
+    needs: [roc-versions, latest-roc, recommended-roc, bundle-on-latest-roc, bundle-on-recommended-roc]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     outputs:
@@ -157,10 +169,10 @@ jobs:
     steps:
       - id: pick
         env:
-          LATEST: ${{ needs.resolve.outputs.nightly }}
-          RECOMMENDED: ${{ needs.resolve.outputs.recommended }}
-          LATEST_OK: ${{ needs.latest.result == 'success' && needs.bundle-latest.result == 'success' }}
-          RECOMMENDED_OK: ${{ needs.recommended.result == 'success' && needs.bundle-recommended.result == 'success' }}
+          LATEST: ${{ needs.roc-versions.outputs.nightly }}
+          RECOMMENDED: ${{ needs.roc-versions.outputs.recommended }}
+          LATEST_OK: ${{ needs.latest-roc.result == 'success' && needs.bundle-on-latest-roc.result == 'success' }}
+          RECOMMENDED_OK: ${{ needs.recommended-roc.result == 'success' && needs.bundle-on-recommended-roc.result == 'success' }}
         run: |
           nightly=
           if [ "$LATEST_OK" = true ]; then
@@ -170,17 +182,18 @@ jobs:
           fi
           echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
           if [ -n "$nightly" ]; then
-            echo "claiming $nightly"
+            echo "compatible with $nightly"
           else
-            echo "::warning::no nightly passed speed from both the checkout and the bundle, so the notes will claim nothing"
+            echo "::warning::no nightly passed speed from both the checkout and the bundle, so the notes will name none"
           fi
 
-  claim:
-    needs: [draft, choose]
-    if: ${{ !cancelled() && needs.draft.result == 'success' && needs.choose.outputs.nightly != '' }}
+  release-notes:
+    name: 'Optional: write it into the notes'
+    needs: [draft, compatible-roc]
+    if: ${{ !cancelled() && needs.draft.result == 'success' && needs.compatible-roc.outputs.nightly != '' }}
     permissions:
       contents: write
     uses: niclas-ahden/roc-workflows/.github/workflows/name-nightly.yml@v3
     with:
       release: ${{ github.ref_name }}
-      nightly: ${{ needs.choose.outputs.nightly }}
+      nightly: ${{ needs.compatible-roc.outputs.nightly }}

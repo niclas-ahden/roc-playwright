@@ -1,5 +1,13 @@
 name: Test
 
+# Two lanes. Required is the one check a release needs, and Optional is
+# everything else, which may be red without holding anything up.
+#
+# A job's `name` here is the lane and the subject, and the reusable workflow
+# it calls names the work, so a check reads "Required / Test" or "Optional:
+# latest Roc / Tests (speed, ubuntu-24.04)". Required jobs are defined first
+# so the graph draws them on top.
+
 on:
   push:
     branches:
@@ -17,36 +25,30 @@ jobs:
   # a bundle sanity check and ./tests.roc, which is the whole Playwright suite
   # running under `nix develop`.
   test:
+    name: Required
     uses: niclas-ahden/roc-workflows/.github/workflows/test.yml@v3
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  resolve:
+  # Looks up the newest Roc nightly, once, so every leg below tests the same
+  # one.
+  roc-versions:
+    name: 'Optional: look up Roc versions'
     uses: niclas-ahden/roc-workflows/.github/workflows/resolve-versions.yml@v3
 
   # What a package that spawns browsers has to prove per operating system, on
   # the newest downloaded nightly, because that is the compiler its users have:
   # the suite passes, and nothing it started outlives the program that started
-  # it.
-  latest:
-    needs: resolve
+  # it. Every backend runs, so we see the day one breaks, or the day one goes
+  # green. Nothing reads the result, so one call covers them all.
+  latest-roc:
+    name: 'Optional: latest Roc'
+    needs: roc-versions
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Latest nightly
-      node: true
-      setup: .github/scripts/setup.sh
-      teardown: .github/scripts/teardown.sh
-
-  # Informational and not branch protected. Running the other backends anyway
-  # means we see the day one breaks, or the day one goes green.
-  latest-opts:
-    needs: resolve
-    uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
-    with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Latest nightly
-      opts: '["dev", "size", "interpreter"]'
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: Tests
+      opts: '["speed", "dev", "size", "interpreter"]'
       node: true
       setup: .github/scripts/setup.sh
       teardown: .github/scripts/teardown.sh

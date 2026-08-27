@@ -4,8 +4,8 @@ name: Test latest release on latest nightly Roc
 # URL, on the newest Roc nightly. Green moves the recommendation forward in
 # that release's notes. Red means we adapt to Roc, or report a bug.
 #
-# Speed decides. dev, size and interpreter run too but must not hold back a
-# recommendation.
+# Two lanes. Required is speed, which decides. Optional is dev, size and
+# interpreter, which run too but must not hold back a recommendation.
 #
 # Publishing does not trigger this. The release workflow already tested that
 # bundle while it was a draft.
@@ -24,9 +24,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Resolved once, so every leg runs the exact same nightly against the exact
-  # same release.
-  resolve:
+  # Looks up the latest release and the latest Roc nightly, once, so every leg
+  # runs the exact same nightly against the exact same release.
+  roc-versions:
+    name: 'Required: look up the release and the latest Roc'
     uses: niclas-ahden/roc-workflows/.github/workflows/resolve-versions.yml@v3
     with:
       release: true
@@ -36,8 +37,8 @@ jobs:
   # Say so and test nothing, rather than let a missing file be reported as a Roc
   # regression by the job at the bottom.
   hooks:
-    name: Does the release carry the suite hooks
-    needs: resolve
+    name: 'Required: does the release carry the suite hooks'
+    needs: roc-versions
     runs-on: ubuntu-24.04
     # The one place the hook paths are written down. The legs below read them
     # back out, so a rename can never leave this job checking for one file
@@ -49,11 +50,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve.outputs.release }}
+          ref: ${{ needs.roc-versions.outputs.release }}
 
       - id: check
         env:
-          RELEASE: ${{ needs.resolve.outputs.release }}
+          RELEASE: ${{ needs.roc-versions.outputs.release }}
           SETUP: .github/scripts/setup.sh
           TEARDOWN: .github/scripts/teardown.sh
         run: |
@@ -71,51 +72,55 @@ jobs:
 
   # The versions go in the job name, because `run-name` cannot see `needs`.
   test:
-    needs: [resolve, hooks]
+    name: 'Required: latest Roc'
+    needs: [roc-versions, hooks]
     if: needs.hooks.outputs.present == 'true'
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: roc-playwright ${{ needs.resolve.outputs.release }} on ${{ needs.resolve.outputs.nightly }}
-      ref: ${{ needs.resolve.outputs.release }}
-      bundle-url: ${{ needs.resolve.outputs.bundle }}
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: roc-playwright ${{ needs.roc-versions.outputs.release }} on ${{ needs.roc-versions.outputs.nightly }}
+      ref: ${{ needs.roc-versions.outputs.release }}
+      bundle-url: ${{ needs.roc-versions.outputs.bundle }}
       node: true
       setup: ${{ needs.hooks.outputs.setup }}
       teardown: ${{ needs.hooks.outputs.teardown }}
 
-  advisory:
-    needs: [resolve, hooks]
+  other-backends:
+    name: 'Optional: latest Roc, other backends'
+    needs: [roc-versions, hooks]
     if: needs.hooks.outputs.present == 'true'
     uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: ${{ needs.resolve.outputs.nightly }}
-      label: Advisory ${{ needs.resolve.outputs.release }} on ${{ needs.resolve.outputs.nightly }}
+      roc: ${{ needs.roc-versions.outputs.nightly }}
+      label: roc-playwright ${{ needs.roc-versions.outputs.release }} on ${{ needs.roc-versions.outputs.nightly }}
       opts: '["dev", "size", "interpreter"]'
-      ref: ${{ needs.resolve.outputs.release }}
-      bundle-url: ${{ needs.resolve.outputs.bundle }}
+      ref: ${{ needs.roc-versions.outputs.release }}
+      bundle-url: ${{ needs.roc-versions.outputs.bundle }}
       node: true
       setup: ${{ needs.hooks.outputs.setup }}
       teardown: ${{ needs.hooks.outputs.teardown }}
 
-  # Green on every leg: recommend this nightly in the tested release's notes.
+  # Green on every required leg: recommend this nightly in the tested
+  # release's notes.
   recommend:
-    needs: [resolve, test]
+    name: Recommend this Roc in the release notes
+    needs: [roc-versions, test]
     permissions:
       contents: write
     uses: niclas-ahden/roc-workflows/.github/workflows/name-nightly.yml@v3
     with:
-      release: ${{ needs.resolve.outputs.release }}
-      nightly: ${{ needs.resolve.outputs.nightly }}
+      release: ${{ needs.roc-versions.outputs.release }}
+      nightly: ${{ needs.roc-versions.outputs.nightly }}
 
   name-commit-range:
-    name: Name the commit range
-    needs: [resolve, test]
-    # Only for a red suite. A failed `resolve` would leave every version below
-    # empty.
+    name: Name the Roc commit range that broke it
+    needs: [roc-versions, test]
+    # Only for a red suite. A failed `roc-versions` would leave every version
+    # below empty.
     if: needs.test.result == 'failure'
     runs-on: ubuntu-24.04
     steps:
       - name: Name the commit range
         run: |
-          echo "::error::roc-playwright ${{ needs.resolve.outputs.release }} fails on roc ${{ needs.resolve.outputs.nightly }}"
-          echo "  https://github.com/roc-lang/roc/compare/${{ needs.resolve.outputs.prev_sha }}...${{ needs.resolve.outputs.sha }}"
+          echo "::error::roc-playwright ${{ needs.roc-versions.outputs.release }} fails on roc ${{ needs.roc-versions.outputs.nightly }}"
+          echo "  https://github.com/roc-lang/roc/compare/${{ needs.roc-versions.outputs.prev_sha }}...${{ needs.roc-versions.outputs.sha }}"
