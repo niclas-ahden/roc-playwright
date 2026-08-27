@@ -12,27 +12,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The package checks shared by every Roc package of ours: roc check, roc
-  # test, a bundle sanity check, and ./tests.roc under the flake's compiler.
+  # The checks shared by every Roc package of ours, under the compiler the
+  # flake pins, which is the one the dev shell hands you: roc check, roc test,
+  # a bundle sanity check and ./tests.roc, which is the whole Playwright suite
+  # running under `nix develop`.
   test:
-    uses: niclas-ahden/roc-workflows/.github/workflows/test.yml@v2
+    uses: niclas-ahden/roc-workflows/.github/workflows/test.yml@v3
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  # What a package that spawns processes has to prove per operating system:
-  # the suite passes, and nothing it started survives the program that
-  # started it.
-  platforms:
-    uses: ./.github/workflows/suite.yml
-    with:
-      roc: pinned
-      label: Pinned
+  resolve:
+    uses: niclas-ahden/roc-workflows/.github/workflows/resolve-versions.yml@v3
 
-  # Informational and not branch-protected. Running the other backends
-  # anyway means we see the day one breaks, or the day dev goes green.
-  advisory:
-    uses: ./.github/workflows/suite.yml
+  # What a package that spawns browsers has to prove per operating system, on
+  # the newest downloaded nightly, because that is the compiler its users have:
+  # the suite passes, and nothing it started outlives the program that started
+  # it.
+  latest:
+    needs: resolve
+    uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
     with:
-      roc: pinned
-      label: Advisory
+      roc: ${{ needs.resolve.outputs.nightly }}
+      label: Latest nightly
+      node: true
+      setup: .github/scripts/setup.sh
+      teardown: .github/scripts/teardown.sh
+
+  # Informational and not branch protected. Running the other backends anyway
+  # means we see the day one breaks, or the day one goes green.
+  latest-opts:
+    needs: resolve
+    uses: niclas-ahden/roc-workflows/.github/workflows/suite.yml@v3
+    with:
+      roc: ${{ needs.resolve.outputs.nightly }}
+      label: Latest nightly
       opts: '["dev", "size", "interpreter"]'
+      node: true
+      setup: .github/scripts/setup.sh
+      teardown: .github/scripts/teardown.sh
