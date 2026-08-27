@@ -14,7 +14,7 @@
     # CI's per operating system legs resolve their own nightly, so nothing
     # over there has to move along with this revision.
     roc-src = {
-      url = "github:roc-lang/roc/8fa1a34b0671345744c943afeddf8f843689d6fe";
+      url = "github:roc-lang/roc/9e3980a1b9432589b4073e2b20abb04877bc7b05";
       flake = false;
     };
   };
