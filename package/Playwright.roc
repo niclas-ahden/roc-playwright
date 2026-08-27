@@ -972,6 +972,55 @@ Playwright :: [].{
 		buffer : List(U8),
 	}
 
+	## How a routed request is answered (see [with_routes!]).
+	RouteAction : [
+		## Answer with this response yourself. The request never leaves the
+		## browser, so the server never sees it. The body is bytes, so it can
+		## be anything: `Str.to_utf8("...")` for text, or an image, or nothing.
+		Fulfill({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }),
+		## Fail the request without a response, the way the network would.
+		## `fetch` rejects and a navigation lands on the browser's error page.
+		## The [AbortReason] is what the browser reports as the cause. `Failed`
+		## is the generic one.
+		Abort(AbortReason),
+	]
+
+	## Why an `Abort` failed, as the browser reports it. Chromium tells them
+	## apart (a `TimedOut` shows up as `net::ERR_TIMED_OUT`, for example).
+	## Firefox and WebKit report most of them as a generic failure. A page
+	## cannot usually tell the difference from `fetch`, which rejects the same
+	## way for all of them, so use `Failed` unless a test reads the browser's
+	## error page.
+	AbortReason : [
+		Failed,
+		Aborted,
+		AccessDenied,
+		AddressUnreachable,
+		BlockedByClient,
+		BlockedByResponse,
+		ConnectionAborted,
+		ConnectionClosed,
+		ConnectionFailed,
+		ConnectionRefused,
+		ConnectionReset,
+		InternetDisconnected,
+		NameNotResolved,
+		TimedOut,
+	]
+
+	## The HTTP methods a [RouteRule] applies to: one of them, or any.
+	RouteMethod : [AnyMethod, GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+
+	## One rule for [with_routes!]: requests whose URL matches `pattern` (a
+	## URL glob, see there) and whose method is `method` get `action`. A rule
+	## with `AnyMethod` applies to every method, so a REST resource can be
+	## broken for writes while its reads still reach the server:
+	##
+	## ```
+	## { pattern: "**/todos", method: POST, action: Abort(Failed) }
+	## ```
+	RouteRule : { pattern : Str, method : RouteMethod, action : RouteAction }
+
 	## Launch a browser with default settings (headless, 30s timeout).
 	##
 	## ```
@@ -1161,8 +1210,8 @@ Playwright :: [].{
 
 	## Answer requests from the page yourself instead of letting them reach
 	## the network, for as long as `body!` runs. Each [RouteRule] pairs a
-	## URL pattern and a [RouteMethod] with a [RouteAction]: a [Fulfill]
-	## response the server never sees, or an [Abort] that fails the request
+	## URL pattern and a [RouteMethod] with a [RouteAction]: a `Fulfill`
+	## response the server never sees, or an `Abort` that fails the request
 	## the way the network would. Requests no rule matches go through
 	## untouched.
 	##
@@ -3727,55 +3776,6 @@ no_bounding_box_response = |id| {
 # synchronous client that means answering inside the read loop: whenever a
 # command on a routed page waits for its response, the loop tracks those
 # creates and answers the routes it meets from the page's rules.
-
-## How a routed request is answered (see [with_routes!]).
-RouteAction : [
-	## Answer with this response yourself. The request never leaves the
-	## browser, so the server never sees it. The body is bytes, so it can
-	## be anything: `Str.to_utf8("...")` for text, or an image, or nothing.
-	Fulfill({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }),
-	## Fail the request without a response, the way the network would.
-	## `fetch` rejects and a navigation lands on the browser's error page.
-	## The [AbortReason] is what the browser reports as the cause. `Failed`
-	## is the generic one.
-	Abort(AbortReason),
-]
-
-## Why an [Abort] failed, as the browser reports it. Chromium tells them
-## apart (a `TimedOut` shows up as `net::ERR_TIMED_OUT`, for example).
-## Firefox and WebKit report most of them as a generic failure. A page
-## cannot usually tell the difference from `fetch`, which rejects the same
-## way for all of them, so use `Failed` unless a test reads the browser's
-## error page.
-AbortReason : [
-	Failed,
-	Aborted,
-	AccessDenied,
-	AddressUnreachable,
-	BlockedByClient,
-	BlockedByResponse,
-	ConnectionAborted,
-	ConnectionClosed,
-	ConnectionFailed,
-	ConnectionRefused,
-	ConnectionReset,
-	InternetDisconnected,
-	NameNotResolved,
-	TimedOut,
-]
-
-## The HTTP methods a [RouteRule] applies to: one of them, or any.
-RouteMethod : [AnyMethod, GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
-
-## One rule for [with_routes!]: requests whose URL matches `pattern` (a
-## URL glob, see there) and whose method is `method` get `action`. A rule
-## with `AnyMethod` applies to every method, so a REST resource can be
-## broken for writes while its reads still reach the server:
-##
-## ```
-## { pattern: "**/todos", method: POST, action: Abort(Failed) }
-## ```
-RouteRule : { pattern : Str, method : RouteMethod, action : RouteAction }
 
 # What the read loop needs: where to read, and, for a page with routes,
 # where to write the answers and the routes to answer with. Built by
