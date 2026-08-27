@@ -659,6 +659,32 @@ const scroll_test_page = `<!DOCTYPE html>
 </body>
 </html>`;
 
+const route_test_page = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Route Test</title>
+</head>
+<body>
+    <h1>Route Test</h1>
+    <button id="fetch">Fetch the greeting</button>
+    <button id="post">Post a greeting</button>
+    <p id="result">Nothing fetched yet</p>
+    <script>
+        // Both buttons hit the same URL, GET and POST, so a rule can be
+        // shown to tell the methods apart.
+        const request = (init) => {
+            const result = document.getElementById('result');
+            result.textContent = 'Fetching';
+            fetch('/api/greeting', init)
+                .then((res) => res.text().then((body) => { result.textContent = res.status + ' ' + body; }))
+                .catch(() => { result.textContent = 'failed'; });
+        };
+        document.getElementById('fetch').addEventListener('click', () => request());
+        document.getElementById('post').addEventListener('click', () => request({ method: 'POST', body: 'hi' }));
+    </script>
+</body>
+</html>`;
+
 const routes = {
   "/": home_page,
   "/checkbox-test": checkbox_test_page,
@@ -683,11 +709,18 @@ const routes = {
   "/hover-test": hover_test_page,
   "/mouse-test": mouse_test_page,
   "/file-upload": file_upload_page,
+  "/route-test": route_test_page,
 };
 
 http
   .createServer((req, res) => {
     const path = req.url.split("?")[0];
+    // The one non-HTML route: what /route-test fetches when nothing intercepts it.
+    if (path === "/api/greeting") {
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+      res.end(req.method === "POST" ? "greeting posted" : "hello from the server");
+      return;
+    }
     const body = routes[path];
     if (body !== undefined) {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });

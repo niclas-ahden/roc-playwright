@@ -81,6 +81,9 @@ Playwright :: [].{
 		context : Context(err),
 		page_guid : Str,
 		frame_guid : Str,
+		## The request rules in force, innermost [with_routes!] block first.
+		## Answered while a command on this page waits for its response.
+		routes : List(RouteRule),
 	}.{
 		## The one element matching `selector`, for acting on or asserting
 		## against. Lazy: nothing is sent to the driver until you use it.
@@ -1125,7 +1128,7 @@ Playwright :: [].{
 		send_message!(write_child!, Str.to_utf8(Json.to_str(context_msg)))?
 
 		context_guid = read_until_create_guid!(read_child!, "BrowserContext")?
-		response = read_until_response!(read_child!, msg_id)?
+		response = read_until_response!(browser_link(browser), msg_id)?
 
 		match response.error {
 			Ok(err) => Err(NewContextError(err.error.message))
@@ -1148,11 +1151,59 @@ Playwright :: [].{
 		send_message!(write_child!, Str.to_utf8(Json.to_str(page_msg)))?
 
 		{ page_guid, frame_guid } = read_until_page_and_frame!(read_child!)?
-		response = read_until_response!(read_child!, msg_id)?
+		response = read_until_response!(browser_link(browser), msg_id)?
 
 		match response.error {
 			Ok(err) => Err(NewPageError(err.error.message))
-			Err(_) => Ok(Page.{ context, page_guid, frame_guid })
+			Err(_) => Ok(Page.{ context, page_guid, frame_guid, routes: [] })
+		}
+	}
+
+	## Answer requests from the page yourself instead of letting them reach
+	## the network, for as long as `body!` runs. Each [RouteRule] pairs a
+	## URL pattern and a [RouteMethod] with a [RouteAction]: a [Fulfill]
+	## response the server never sees, or an [Abort] that fails the request
+	## the way the network would. Requests no rule matches go through
+	## untouched.
+	##
+	## `body!` receives the page with the rules in force, and everything
+	## inside the block must go through that page: the rules travel with
+	## the value, so a command on the outer page would let a held request
+	## through to the server. When `body!` returns, with Ok or with Err,
+	## the rules are removed again and its result is handed back, so a page
+	## never carries a stale rule and a test that fails halfway cannot
+	## leave the network broken for what follows. Blocks nest: the inner
+	## rules are tried first, and among those the first in the list that
+	## matches decides.
+	##
+	## Patterns are Playwright's URL globs, matched against the whole URL:
+	## `*` matches any run of characters except `/`, `**/` any number of
+	## whole path segments, a trailing `**` anything at all, `{a,b}` either
+	## of the options, `\` the next character literally, and everything
+	## else (`?` included) stands for itself.
+	##
+	## Held requests are answered while a command on the page waits for
+	## its reply (a click, an assertion, an evaluate), which is when the
+	## driver is being read. A request the page fires while nothing is in
+	## flight waits for the next command, in a test the assertion that
+	## follows. Commands on the browser itself ([new_page!], [close!])
+	## answer nothing.
+	##
+	## ```
+	## refused = Fulfill({ status: 500, headers: [], body: Str.to_utf8("database on fire") })
+	## page.with_routes!([{ pattern: "**/todos", method: POST, action: refused }], |routed| {
+	##     routed.find("#save").click!()?
+	##     assert!(routed.find(".notice").has_text("Could not save"))
+	## })?
+	## ```
+	with_routes! : Page([RouteError(Str), ..e]), List(RouteRule), (Page([RouteError(Str), ..e]) => Try(a, [RouteError(Str), ..e])) => Try(a, [RouteError(Str), ..e])
+	with_routes! = |page, rules, body!| {
+		routed = set_routes!(page, rules.concat(page.routes))?
+		result = body!(routed)
+		restored = set_routes!(page, page.routes)
+		match result {
+			Ok(value) => restored.map_ok(|_| value)
+			Err(e) => Err(e)
 		}
 	}
 
@@ -1516,7 +1567,7 @@ Playwright :: [].{
 		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
 
 		cdp_session_guid = read_until_create_guid!(read_child!, "CDPSession")?
-		_cdp_response = read_until_response!(read_child!, msg_id)?
+		_cdp_response = read_until_response!(page_link(page), msg_id)?
 
 		# synthesizeScrollGesture distances: the vector the finger moves
 		x_distance = end_x - start_x
@@ -1539,13 +1590,13 @@ Playwright :: [].{
 			metadata: {},
 		}
 		send_message!(write_child!, Str.to_utf8(Json.to_str_try(scroll_msg).map_err(|_| InvalidCoordinates)?))?
-		_response = read_until_response!(read_child!, msg_id)?
+		_response = read_until_response!(page_link(page), msg_id)?
 
 		# Detach the CDP session
 		detach_msg : SimpleMessage
 		detach_msg = { id: msg_id, guid: cdp_session_guid, method: "detach", params: {}, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(detach_msg)))?
-		_detach_response = read_until_response!(read_child!, msg_id)?
+		_detach_response = read_until_response!(page_link(page), msg_id)?
 
 		Ok({})
 	}
@@ -1576,7 +1627,7 @@ Playwright :: [].{
 		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
 
 		cdp_session_guid = read_until_create_guid!(read_child!, "CDPSession")?
-		_cdp_response = read_until_response!(read_child!, msg_id)?
+		_cdp_response = read_until_response!(page_link(page), msg_id)?
 
 		# synthesizeScrollGesture distances: the vector the finger moves
 		x_distance = end_x - start_x
@@ -1603,13 +1654,13 @@ Playwright :: [].{
 			metadata: {},
 		}
 		send_message!(write_child!, Str.to_utf8(Json.to_str_try(swipe_msg).map_err(|_| InvalidCoordinates)?))?
-		_response = read_until_response!(read_child!, msg_id)?
+		_response = read_until_response!(page_link(page), msg_id)?
 
 		# Detach the CDP session
 		detach_msg : SimpleMessage
 		detach_msg = { id: msg_id, guid: cdp_session_guid, method: "detach", params: {}, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(detach_msg)))?
-		_detach_response = read_until_response!(read_child!, msg_id)?
+		_detach_response = read_until_response!(page_link(page), msg_id)?
 
 		Ok({})
 	}
@@ -1768,7 +1819,6 @@ Playwright :: [].{
 	close! : Browser(err) => Try({}, [CloseFailed(Str), ..e])
 	close! = |browser| {
 		write_child! = browser.write_stdin!
-		read_child! = browser.read_stdout!
 
 		# Ask the driver to close the browser, and wait for it to say it did.
 		# Killing the driver alone is not enough: it leaves the browser to
@@ -1785,7 +1835,7 @@ Playwright :: [].{
 		close_msg : SimpleMessage
 		close_msg = { id: msg_id, guid: browser.browser_guid, method: "close", params: {}, metadata: {} }
 		_ = send_message!(write_child!, Str.to_utf8(Json.to_str(close_msg)))
-		_ = read_until_response!(read_child!, msg_id)
+		_ = read_until_response!(browser_link(browser), msg_id)
 
 		# Then take the driver down. A program that never reaches close! is
 		# covered by the same driver: `run-driver` exits on stdin EOF and
@@ -3069,7 +3119,7 @@ expect_page_text_impl! = |page, t, expression, want, match_substring, normalize,
 exec_expect! = |page, timeout_ms, message_bytes, to_msg| {
 	browser = page.context.browser
 	write_child! = browser.write_stdin!
-	read_child! = browser.read_stdout!
+	read_child! = page_link(page)
 	send_message!(write_child!, message_bytes)?
 	bytes = read_until_id!(read_child!, msg_id, |b| Ok(b))?
 
@@ -3137,7 +3187,7 @@ expect_received = |bytes|
 exec_command! = |page, message_bytes, to_err| {
 	browser = page.context.browser
 	write_child! = browser.write_stdin!
-	read_child! = browser.read_stdout!
+	read_child! = page_link(page)
 	send_message!(write_child!, message_bytes)?
 	response = read_until_response!(read_child!, msg_id)?
 
@@ -3152,7 +3202,7 @@ exec_command! = |page, message_bytes, to_err| {
 exec_string_command! = |page, message_bytes, to_err, missing| {
 	browser = page.context.browser
 	write_child! = browser.write_stdin!
-	read_child! = browser.read_stdout!
+	read_child! = page_link(page)
 	send_message!(write_child!, message_bytes)?
 	response = read_until_plain_string_response!(read_child!, msg_id)?
 
@@ -3176,7 +3226,7 @@ exec_string_command! = |page, message_bytes, to_err, missing| {
 exec_nullable_string_command! = |page, message_bytes, to_err| {
 	browser = page.context.browser
 	write_child! = browser.write_stdin!
-	read_child! = browser.read_stdout!
+	read_child! = page_link(page)
 	send_message!(write_child!, message_bytes)?
 	read_until_nullable_string_response!(read_child!, msg_id, to_err)
 }
@@ -3187,7 +3237,7 @@ send_to_page! = |page, message_bytes| {
 	browser = page.context.browser
 	write_child! = browser.write_stdin!
 	send_message!(write_child!, message_bytes)?
-	Ok(browser.read_stdout!)
+	Ok(page_link(page))
 }
 
 # Message ID used for all commands.
@@ -3353,7 +3403,7 @@ initialize_browser! = |write_child!, read_child!, kill!, browser_type, headless,
 	browser_guid = read_until_browser_guid!(read_child!)?
 
 	# Read the launch response (id:2)
-	_launch_response = read_until_response!(read_child!, 2)?
+	_launch_response = read_until_response!({ read_child!, write_child!, routes: [] }, 2)?
 
 	# The child-bound closures are punned into the Browser record by name.
 	Ok(Playwright.Browser.{
@@ -3518,8 +3568,14 @@ read_page_frame_loop! = |read_child!, found_page, found_frame| {
 ## Read messages until one carries the expected id, then hand its bytes to
 ## `handle`. Everything else on the stream (events, responses to other ids,
 ## anything without an id field) is skipped.
-read_until_id! = |read_child!, expected_id, handle| {
-	bytes = receive_message_bytes!(read_child!)?
+## `link` is where to read from and, for a page with routes, where to write
+## the answers to the `route` events that arrive while waiting (see
+## page_link). Every other message is skipped.
+read_until_id! = |link, expected_id, handle|
+	read_until_id_loop!(link, expected_id, handle, no_intercepted)
+
+read_until_id_loop! = |link, expected_id, handle, intercepted| {
+	bytes = receive_message_bytes!(link.read_child!)?
 	has_expected_id = match decode_id_check(bytes) {
 		Ok(id_msg) => id_msg.id == Ok(expected_id)
 		Err(_) => Bool.False
@@ -3527,7 +3583,8 @@ read_until_id! = |read_child!, expected_id, handle| {
 	if has_expected_id {
 		handle(bytes)
 	} else {
-		read_until_id!(read_child!, expected_id, handle)
+		still_intercepted = answer_route!(link, bytes, intercepted)?
+		read_until_id_loop!(link, expected_id, handle, still_intercepted)
 	}
 }
 
@@ -3660,3 +3717,496 @@ no_bounding_box_response = |id| {
 	result: Ok({ value: Err(Missing) }),
 	error: Err(Missing),
 }
+
+# --- Request routing ---
+#
+# Interception is event-driven: once a page has patterns, the driver holds
+# every matching request and emits a `route` event, preceded by `__create__`
+# events for the Request (which carries the URL) and the Route (which names
+# the request). Nothing proceeds until the client answers the Route. With a
+# synchronous client that means answering inside the read loop: whenever a
+# command on a routed page waits for its response, the loop tracks those
+# creates and answers the routes it meets from the page's rules.
+
+## How a routed request is answered (see [with_routes!]).
+RouteAction : [
+	## Answer with this response yourself. The request never leaves the
+	## browser, so the server never sees it. The body is bytes, so it can
+	## be anything: `Str.to_utf8("...")` for text, or an image, or nothing.
+	Fulfill({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }),
+	## Fail the request without a response, the way the network would.
+	## `fetch` rejects and a navigation lands on the browser's error page.
+	## The [AbortReason] is what the browser reports as the cause. `Failed`
+	## is the generic one.
+	Abort(AbortReason),
+]
+
+## Why an [Abort] failed, as the browser reports it. Chromium tells them
+## apart (a `TimedOut` shows up as `net::ERR_TIMED_OUT`, for example).
+## Firefox and WebKit report most of them as a generic failure. A page
+## cannot usually tell the difference from `fetch`, which rejects the same
+## way for all of them, so use `Failed` unless a test reads the browser's
+## error page.
+AbortReason : [
+	Failed,
+	Aborted,
+	AccessDenied,
+	AddressUnreachable,
+	BlockedByClient,
+	BlockedByResponse,
+	ConnectionAborted,
+	ConnectionClosed,
+	ConnectionFailed,
+	ConnectionRefused,
+	ConnectionReset,
+	InternetDisconnected,
+	NameNotResolved,
+	TimedOut,
+]
+
+## The HTTP methods a [RouteRule] applies to: one of them, or any.
+RouteMethod : [AnyMethod, GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+
+## One rule for [with_routes!]: requests whose URL matches `pattern` (a
+## URL glob, see there) and whose method is `method` get `action`. A rule
+## with `AnyMethod` applies to every method, so a REST resource can be
+## broken for writes while its reads still reach the server:
+##
+## ```
+## { pattern: "**/todos", method: POST, action: Abort(Failed) }
+## ```
+RouteRule : { pattern : Str, method : RouteMethod, action : RouteAction }
+
+# What the read loop needs: where to read, and, for a page with routes,
+# where to write the answers and the routes to answer with. Built by
+# browser_link (no routes) and page_link (the page's).
+browser_link = |browser| {
+	read_child!: browser.read_stdout!,
+	write_child!: browser.write_stdin!,
+	routes: [],
+}
+
+page_link = |page| {
+	read_child!: page.context.browser.read_stdout!,
+	write_child!: page.context.browser.write_stdin!,
+	routes: page.routes,
+}
+
+## Install `routes` on the page and tell the driver which URLs to hold for
+## an answer. An empty list switches interception off again. The driver
+## does its own matching with the same glob rules, so every `route` event
+## that arrives is for a URL at least one of these rules matches.
+set_routes! = |page, routes| {
+	routed = Page.{ context: page.context, page_guid: page.page_guid, frame_guid: page.frame_guid, routes }
+	msg : SetPatternsMessage
+	msg = {
+		id: msg_id,
+		guid: page.page_guid,
+		method: "setNetworkInterceptionPatterns",
+		params: { patterns: routes.map(|rule| { glob: rule.pattern }) },
+		metadata: {},
+	}
+	exec_command!(routed, Str.to_utf8(Json.to_str(msg)), |m| RouteError(m))?
+	Ok(routed)
+}
+
+# Route answers go out while another command's response is awaited, so they
+# carry their own id: the loop skips their responses, since it only ever
+# hands back the id it was asked for.
+route_msg_id : U64
+route_msg_id = 1001
+
+SetPatternsMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : { patterns : List({ glob : Str }) },
+	metadata : {},
+}
+
+RouteFulfillMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : { status : U16, headers : List({ name : Str, value : Str }), body : Str, isBase64 : Bool },
+	metadata : {},
+}
+
+RouteAbortMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : { errorCode : Str },
+	metadata : {},
+}
+
+RouteContinueMessage : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : { isFallback : Bool },
+	metadata : {},
+}
+
+# The driver's `__create__` events and the page's `route` event, decoded
+# with one shape: the fields a given event lacks come back Missing.
+EventMessage : {
+	method : Try(Str, [Missing]),
+	params : Try(EventParams, [Missing]),
+}
+
+EventParams : {
+	type : Try(Str, [Missing]),
+	guid : Try(Str, [Missing]),
+	initializer : Try(EventInitializer, [Missing]),
+	route : Try(GuidRef, [Missing]),
+}
+
+EventInitializer : {
+	url : Try(Str, [Missing]),
+	method : Try(Str, [Missing]),
+	request : Try(GuidRef, [Missing]),
+}
+
+GuidRef : { guid : Str }
+
+decode_event : List(U8) -> Try(EventMessage, [DecodeError])
+decode_event = |bytes| decode_json(bytes)
+
+# The Request and Route objects announced so far in one read loop, so that a
+# `route` event can be traced back to its URL and method. One loop's worth
+# of tracking is enough: the driver creates the Request, creates the Route,
+# and emits the event in one synchronous step (`_requestInterceptor` in
+# playwright-core's pageDispatcher), so no command's reply can land between
+# them, and nothing else announces a Request first: `request` events are
+# subscription-gated and this client never subscribes.
+Intercepted : {
+	requests : List({ guid : Str, url : Str, method : Str }),
+	routes : List({ guid : Str, request : Str }),
+}
+
+no_intercepted : Intercepted
+no_intercepted = { requests: [], routes: [] }
+
+# Track a `__create__`, answer a `route`, ignore everything else. Returns the
+# tracking state for the next message.
+answer_route! = |link, bytes, intercepted|
+	match decode_event(bytes) {
+		Err(_) => Ok(intercepted)
+		Ok(event) =>
+			match event.params {
+				Err(_) => Ok(intercepted)
+				Ok(params) =>
+					if event.method == Ok("__create__") {
+						Ok(track_created(intercepted, params))
+					} else if event.method == Ok("route") {
+						match params.route {
+							Ok(route) => {
+								reply_to_route!(link, route.guid, intercepted)?
+								Ok(intercepted)
+							}
+
+							Err(_) => Ok(intercepted)
+						}
+					} else {
+						Ok(intercepted)
+					}
+			}
+	}
+
+track_created : Intercepted, EventParams -> Intercepted
+track_created = |intercepted, params| {
+	guid = params.guid ?? ""
+	if params.type == Ok("Request") {
+		match params.initializer {
+			Ok(init) => { ..intercepted, requests: intercepted.requests.append({ guid, url: init.url ?? "", method: init.method ?? "" }) }
+			Err(_) => intercepted
+		}
+	} else if params.type == Ok("Route") {
+		match params.initializer {
+			Ok(init) =>
+				match init.request {
+					Ok(request) => { ..intercepted, routes: intercepted.routes.append({ guid, request: request.guid }) }
+					Err(_) => intercepted
+				}
+
+			Err(_) => intercepted
+		}
+	} else {
+		intercepted
+	}
+}
+
+# Answer one held request. The first rule matching its URL and method
+# decides. A request no rule matches goes through, which happens only when
+# the rule it was held for was removed since (the driver holds nothing
+# else). A route that cannot be traced back to its request breaks the
+# contract Intercepted rests on, so it crashes rather than answer with a
+# guess: a wrong guess would stage the wrong failure, and letting it
+# through would reach the server, and neither would be noticed.
+reply_to_route! = |link, route_guid, intercepted| {
+	unannounced = "roc-playwright: a held request (route ${route_guid}) was never announced to this read loop, so its URL and method are unknown. This is a bug in roc-playwright, please report it with the test that hit it."
+	route =
+		match intercepted.routes.keep_if(|r| r.guid == route_guid).first() {
+			Ok(found) => found
+			Err(_) => crash unannounced
+		}
+	request =
+		match intercepted.requests.keep_if(|r| r.guid == route.request).first() {
+			Ok(found) => found
+			Err(_) => crash unannounced
+		}
+
+	chosen = link.routes.keep_if(|rule| rule_matches(rule, request)).first()
+
+	bytes =
+		match chosen {
+			Ok({ action: Fulfill({ status, headers, body }), .. }) => {
+				msg : RouteFulfillMessage
+				msg = { id: route_msg_id, guid: route_guid, method: "fulfill", params: { status, headers, body: Base64.encode(body), isBase64: Bool.True }, metadata: {} }
+				Str.to_utf8(Json.to_str(msg))
+			}
+
+			Ok({ action: Abort(reason), .. }) => {
+				msg : RouteAbortMessage
+				msg = { id: route_msg_id, guid: route_guid, method: "abort", params: { errorCode: abort_error_code(reason) }, metadata: {} }
+				Str.to_utf8(Json.to_str(msg))
+			}
+
+			Err(_) => {
+				msg : RouteContinueMessage
+				msg = { id: route_msg_id, guid: route_guid, method: "continue", params: { isFallback: Bool.False }, metadata: {} }
+				Str.to_utf8(Json.to_str(msg))
+			}
+		}
+
+	send_message!(link.write_child!, bytes)
+}
+
+# Whether a rule applies to a request: its pattern matches the URL and its
+# method is the request's, or any.
+rule_matches : RouteRule, { url : Str, method : Str, .. } -> Bool
+rule_matches = |rule, request|
+	glob_matches(rule.pattern, request.url) and method_matches(rule.method, request.method)
+
+# The driver reports the method the way the page sent it, and `fetch`
+# uppercases the standard ones, so a plain comparison is enough.
+method_matches : RouteMethod, Str -> Bool
+method_matches = |method, sent|
+	match method {
+		AnyMethod => Bool.True
+		GET => sent == "GET"
+		HEAD => sent == "HEAD"
+		POST => sent == "POST"
+		PUT => sent == "PUT"
+		PATCH => sent == "PATCH"
+		DELETE => sent == "DELETE"
+		OPTIONS => sent == "OPTIONS"
+	}
+
+# The driver's name for each reason, from the `errorCode` list of
+# Playwright's `route.abort`.
+abort_error_code : AbortReason -> Str
+abort_error_code = |reason|
+	match reason {
+		Failed => "failed"
+		Aborted => "aborted"
+		AccessDenied => "accessdenied"
+		AddressUnreachable => "addressunreachable"
+		BlockedByClient => "blockedbyclient"
+		BlockedByResponse => "blockedbyresponse"
+		ConnectionAborted => "connectionaborted"
+		ConnectionClosed => "connectionclosed"
+		ConnectionFailed => "connectionfailed"
+		ConnectionRefused => "connectionrefused"
+		ConnectionReset => "connectionreset"
+		InternetDisconnected => "internetdisconnected"
+		NameNotResolved => "namenotresolved"
+		TimedOut => "timedout"
+	}
+
+## Whether a URL matches a route pattern, with the rules of Playwright's
+## own `globToRegexPattern` (1.61). `*` is `[^/]*`. Two or more stars
+## followed by `/` are `(.*/)`, or `((.+/)|)` when a `/` precedes them too,
+## and swallow that `/`. Two or more stars anywhere else are `.*`. `{a,b}`
+## alternates. `\` escapes the next character. Everything else, `?` and
+## `[]` included, stands for itself. The driver matches the same way when
+## deciding which requests to hold, so the two never disagree.
+glob_matches : Str, Str -> Bool
+glob_matches = |pattern, url| match_glob(parse_glob(Str.to_utf8(pattern)), Str.to_utf8(url))
+
+# What one piece of a pattern matches.
+GlobPiece : [
+	Lit(U8),
+	## `[^/]*`
+	Star,
+	## `.*`
+	Any,
+	## `(.*/)`: whole segments ending in `/`, at least the `/`
+	Segments,
+	## `((.+/)|)`: nothing, or whole segments ending in `/`
+	SegmentsOpt,
+]
+
+# A parsed pattern: pieces, and `{a,b}` groups of alternatives. Playwright
+# rejects nested groups, so an alternative is a flat list of pieces.
+GlobToken : [Piece(GlobPiece), Group(List(List(GlobPiece)))]
+
+GlobParse : {
+	tokens : List(GlobToken),
+	## While inside `{ }`: the alternatives finished so far and the current one.
+	group : Try({ done : List(List(GlobPiece)), current : List(GlobPiece) }, [Outside]),
+	## The last raw byte consumed, for the `/**/` rule.
+	prev : Try(U8, [Start]),
+}
+
+parse_glob : List(U8) -> List(GlobToken)
+parse_glob = |bytes| parse_glob_loop(bytes, { tokens: [], group: Err(Outside), prev: Err(Start) })
+
+parse_glob_loop : List(U8), GlobParse -> List(GlobToken)
+parse_glob_loop = |bytes, state|
+	match bytes.first() {
+		Err(_) =>
+			# An unclosed `{` is an error in the driver, which refuses the
+			# pattern before we ever match with it. Keep what was parsed.
+			match state.group {
+				Ok({ done, current }) => state.tokens.append(Group(done.append(current)))
+				Err(_) => state.tokens
+			}
+
+		# `\`: the next byte literally
+		Ok(92) =>
+			match bytes.get(1) {
+				Ok(next) => parse_glob_loop(bytes.drop_first(2), push_piece(state, Lit(next), next))
+				Err(_) => parse_glob_loop(bytes.drop_first(1), push_piece(state, Lit(92), 92))
+			}
+
+		# `*`
+		Ok(42) => {
+			stars = count_leading(bytes, 42)
+			rest = bytes.drop_first(stars)
+			if stars > 1 {
+				if rest.first() == Ok(47) {
+					piece = if state.prev == Ok(47) { SegmentsOpt } else { Segments }
+					parse_glob_loop(rest.drop_first(1), push_piece(state, piece, 47))
+				} else {
+					parse_glob_loop(rest, push_piece(state, Any, 42))
+				}
+			} else {
+				parse_glob_loop(rest, push_piece(state, Star, 42))
+			}
+		}
+
+		# `{`: open a group (a nested one is refused by the driver)
+		Ok(123) =>
+			match state.group {
+				Ok(_) => parse_glob_loop(bytes.drop_first(1), push_piece(state, Lit(123), 123))
+				Err(_) => parse_glob_loop(bytes.drop_first(1), { ..state, group: Ok({ done: [], current: [] }), prev: Ok(123) })
+			}
+
+		# `}`: close the group
+		Ok(125) =>
+			match state.group {
+				Ok({ done, current }) =>
+					parse_glob_loop(bytes.drop_first(1), { tokens: state.tokens.append(Group(done.append(current))), group: Err(Outside), prev: Ok(125) })
+
+				Err(_) => parse_glob_loop(bytes.drop_first(1), push_piece(state, Lit(125), 125))
+			}
+
+		# `,`: the next alternative, inside a group
+		Ok(44) =>
+			match state.group {
+				Ok({ done, current }) =>
+					parse_glob_loop(bytes.drop_first(1), { ..state, group: Ok({ done: done.append(current), current: [] }), prev: Ok(44) })
+
+				Err(_) => parse_glob_loop(bytes.drop_first(1), push_piece(state, Lit(44), 44))
+			}
+
+		Ok(byte) => parse_glob_loop(bytes.drop_first(1), push_piece(state, Lit(byte), byte))
+	}
+
+# Add a piece to the current alternative or, outside a group, to the tokens.
+push_piece : GlobParse, GlobPiece, U8 -> GlobParse
+push_piece = |state, piece, raw|
+	match state.group {
+		Ok({ done, current }) => { ..state, group: Ok({ done, current: current.append(piece) }), prev: Ok(raw) }
+		Err(_) => { ..state, tokens: state.tokens.append(Piece(piece)), prev: Ok(raw) }
+	}
+
+count_leading : List(U8), U8 -> U64
+count_leading = |bytes, byte|
+	match bytes.first() {
+		Ok(b) if b == byte => 1 + count_leading(bytes.drop_first(1), byte)
+		_ => 0
+	}
+
+# Backtracking match of the tokens against the whole subject.
+match_glob : List(GlobToken), List(U8) -> Bool
+match_glob = |tokens, subject|
+	match tokens.first() {
+		Err(_) => subject.is_empty()
+		Ok(token) => {
+			rest = tokens.drop_first(1)
+			match token {
+				Piece(Lit(byte)) =>
+					match subject.first() {
+						Ok(next) => next == byte and match_glob(rest, subject.drop_first(1))
+						Err(_) => Bool.False
+					}
+
+				Piece(Star) => swallow(rest, subject, Bool.False)
+				Piece(Any) => swallow(rest, subject, Bool.True)
+				Piece(Segments) => after_slash(rest, subject, 0)
+				Piece(SegmentsOpt) => match_glob(rest, subject) or after_slash(rest, subject, 1)
+				Group(alternatives) => alternatives.any(|alt| match_glob(alt.map(|piece| Piece(piece)).concat(rest), subject))
+			}
+		}
+	}
+
+# A star takes zero characters, then one more at a time, until the rest
+# matches or it runs out of characters it may take (a `/` stops it unless
+# `across_slashes`).
+swallow : List(GlobToken), List(U8), Bool -> Bool
+swallow = |rest, subject, across_slashes|
+	if match_glob(rest, subject) {
+		Bool.True
+	} else {
+		match subject.first() {
+			Err(_) => Bool.False
+			Ok(47) => across_slashes and swallow(rest, subject.drop_first(1), across_slashes)
+			Ok(_) => swallow(rest, subject.drop_first(1), across_slashes)
+		}
+	}
+
+# Try the rest after every `/` at index `from` or later.
+after_slash : List(GlobToken), List(U8), U64 -> Bool
+after_slash = |rest, subject, from|
+	match subject.get(from) {
+		Err(_) => Bool.False
+		Ok(47) => match_glob(rest, subject.drop_first(from + 1)) or after_slash(rest, subject, from + 1)
+		Ok(_) => after_slash(rest, subject, from + 1)
+	}
+
+expect glob_matches("**/todos", "http://127.0.0.1:8917/todos")
+expect !glob_matches("**/todos", "http://127.0.0.1:8917/todos/1")
+expect glob_matches("**/todos/*", "http://127.0.0.1:8917/todos/1")
+expect !glob_matches("**/todos/*", "http://127.0.0.1:8917/todos/1/edit")
+expect glob_matches("**/todos/**", "http://127.0.0.1:8917/todos/1/edit")
+expect glob_matches("**/todos/**", "http://127.0.0.1:8917/todos/")
+expect glob_matches("http://example.com/*.png", "http://example.com/logo.png")
+expect !glob_matches("http://example.com/*.png", "http://example.com/img/logo.png")
+expect glob_matches("**/*.{png,jpg,jpeg}", "https://example.com/a/b.jpg")
+expect !glob_matches("**/*.{png,jpg,jpeg}", "https://example.com/a/b.gif")
+expect glob_matches("**/api/{greeting,other}", "http://x/api/other")
+expect !glob_matches("**/api/{greeting,other}", "http://x/api/else")
+expect glob_matches("http://x/**/z", "http://x/z")
+expect glob_matches("http://x/**/z", "http://x/a/b/z")
+expect !glob_matches("http://x/**/z", "http://x/az")
+expect glob_matches("http://x/**", "http://x/a/b")
+expect glob_matches("http://x/**", "http://x/")
+expect glob_matches("**/search?q=*", "http://x/search?q=roc")
+expect !glob_matches("**/search?q=*", "http://x/searchXq=roc")
+expect glob_matches("**/a\\*b", "http://x/a*b")
+expect !glob_matches("**/a\\*b", "http://x/aXb")
+expect glob_matches("**", "")
+expect !glob_matches("**/todos", "")

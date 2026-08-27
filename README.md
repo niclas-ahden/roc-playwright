@@ -46,13 +46,29 @@ main! = |_args| {
 
 ## Playwright version support
 
-We use Playwright's internal driver protocol, which upstream treats as private and may change in any release. We are currently developing and testing against Playwright 1.61. Other versions are untested and nothing checks the version at runtime. We'll decide on version support as we learn how volatile the Playwright driver protocol is.
+We use Playwright's internal driver protocol, which upstream treats as private and may change in any release. Each [release](https://github.com/niclas-ahden/roc-playwright/releases) names the Playwright version it was tested with in its notes. Other versions are untested and nothing checks the version at runtime.
 
 ## Synchronous design
 
 Unlike other Playwright clients we use a synchronous, blocking design. This means that each command is sent to the Playwright driver and we wait for its response before proceeding to the next command. This should not affect most uses of Playwright, but is good to know.
 
 We may switch to an async design in the future, but starting out like this makes things easier to get off the ground. If you dig into the code you'll find that we completely disregard message IDs, for example, because they don't matter when we're synchronous.
+
+## Request routing
+
+`page.with_routes!(rules, body!)` answers matching requests from the page itself, so a test can make a save fail with a 500 or drop the connection without any cooperation from the server under test. The rules hold while `body!` runs and are removed when it returns, so a failing test cannot leave the network broken for the next one. Blocks nest, and the innermost first-listed matching rule decides:
+
+```roc
+refused = Fulfill({ status: 500, headers: [], body: Str.to_utf8("on fire") })
+page.with_routes!([{ pattern: "**/todos", method: POST, action: refused }], |routed| {
+    routed.find("#save").click!()?
+    assert!(routed.find(".notice").has_text("Could not save"))
+})?
+```
+
+The action is a `Fulfill` with a status, headers, and a body of bytes, or an `Abort(reason)` that fails the request the way the network would (`Abort(Failed)` for the generic case, `Abort(TimedOut)` etc. for a specific one).
+
+Patterns are Playwright's URL globs (`*`, `**/`, `{a,b}` with `\` to escape) matched against the whole URL.
 
 ## Documentation
 
