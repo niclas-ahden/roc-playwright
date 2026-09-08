@@ -50,7 +50,7 @@ Playwright :: [].{
 	##
 	## The platform's `read_stdout!` must return exactly the requested number
 	## of bytes or fail. Returning fewer would desync the message framing.
-	PlatformHooks(cmd, child, err) : {
+	PlatformHooks(cmd, child, err) := {
 		new : Str -> cmd,
 		spawn! : cmd => Try(child, err),
 		driver : Str ?? "playwright",
@@ -742,7 +742,7 @@ Playwright :: [].{
 	## [PlatformHooks]'s `driver`, the defaults fill in a record written
 	## inline at the call. A record bound to a name first has to spell every
 	## field or carry a `LaunchOptions` annotation.
-	LaunchOptions : {
+	LaunchOptions := {
 		browser_type : BrowserType ?? Chromium(DefaultChannel),
 		headless : Bool ?? Bool.True,
 		timeout : Timeout ?? TimeoutMilliseconds(30000),
@@ -752,7 +752,7 @@ Playwright :: [].{
 	## Options for [launch_page_with!]: [LaunchOptions] plus the context
 	## options from [ContextOptions]. Every field carries a default, applied
 	## the way [LaunchOptions] describes.
-	LaunchPageOptions : {
+	LaunchPageOptions := {
 		browser_type : BrowserType ?? Chromium(DefaultChannel),
 		headless : Bool ?? Bool.True,
 		timeout : Timeout ?? TimeoutMilliseconds(30000),
@@ -763,7 +763,7 @@ Playwright :: [].{
 
 	## Options for [new_context_with!]. Every field carries a default, applied
 	## the way [LaunchOptions] describes.
-	ContextOptions : {
+	ContextOptions := {
 		has_touch : Bool ?? Bool.False,
 		permissions : List(Str) ?? [],
 	}
@@ -810,7 +810,7 @@ Playwright :: [].{
 	## Options for [navigate_with!]. `wait_until` defaults to `Load`, applied
 	## the way [LaunchOptions] describes, which makes an inline
 	## `{ url }` mean the same as [navigate!].
-	NavigateOptions : {
+	NavigateOptions := {
 		url : Str,
 		wait_until : WaitUntil ?? Load,
 	}
@@ -1925,7 +1925,7 @@ Playwright :: [].{
 	## a bare selector cannot: with several asserts on one selector in a test,
 	## `label: "listener detached"` says which claim failed and why it
 	## matters.
-	AssertOptions : {
+	AssertOptions := {
 		timeout : AssertTimeout ?? PageTimeout,
 		label : Str ?? "",
 	}
@@ -3052,8 +3052,13 @@ bounding_box_impl! = |page, selector, strict| {
 				Ok(result) =>
 					match result.element {
 						Ok(element_ref) => {
+							# The guid is copied out of the decoded response before it goes
+							# into another message: re-encoding the decoded Str itself
+							# releases its buffer before Json.to_str reads it, and the
+							# boundingBox call segfaults under the LLVM backends.
+							element_guid = "${element_ref.guid}"
 							box_msg : ElementSimpleMessage
-							box_msg = { id: msg_id, guid: element_ref.guid, method: "boundingBox", params: {}, metadata: {} }
+							box_msg = { id: msg_id, guid: element_guid, method: "boundingBox", params: {}, metadata: {} }
 							box_read! = send_to_page!(page, Str.to_utf8(Json.to_str(box_msg)))?
 
 							box_response = read_until_bounding_box_response!(box_read!, msg_id)?
