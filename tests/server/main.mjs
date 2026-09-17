@@ -668,6 +668,8 @@ const route_test_page = `<!DOCTYPE html>
     <h1>Route Test</h1>
     <button id="fetch">Fetch the greeting</button>
     <button id="post">Post a greeting</button>
+    <button id="fetch-later">Fetch the greeting in a while</button>
+    <button id="fetch-twice">Fetch the greeting twice</button>
     <p id="result">Nothing fetched yet</p>
     <script>
         // Both buttons hit the same URL, GET and POST, so a rule can be
@@ -681,6 +683,13 @@ const route_test_page = `<!DOCTYPE html>
         };
         document.getElementById('fetch').addEventListener('click', () => request());
         document.getElementById('post').addEventListener('click', () => request({ method: 'POST', body: 'hi' }));
+        // Fires only once the click is long over, the way a retry or a
+        // debounce does: nothing is in flight when the test moves on.
+        document.getElementById('fetch-later').addEventListener('click', () => {
+            document.getElementById('result').textContent = 'Waiting';
+            setTimeout(() => request(), 500);
+        });
+        document.getElementById('fetch-twice').addEventListener('click', () => { request(); request(); });
     </script>
 </body>
 </html>`;

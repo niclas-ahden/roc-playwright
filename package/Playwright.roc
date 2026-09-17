@@ -975,7 +975,9 @@ Playwright :: [].{
 		buffer : List(U8),
 	}
 
-	## How a routed request is answered (see [with_routes!]).
+	## How a routed request is answered (see [with_routes!]): one of the
+	## answers in [RouteAnswer], given right away, or `Hold`, which keeps the
+	## request pending until [release!] gives the answer.
 	RouteAction : [
 		## Answer with this response yourself. The request never leaves the
 		## browser, so the server never sees it. The body is bytes, so it can
@@ -986,6 +988,25 @@ Playwright :: [].{
 		## The [AbortReason] is what the browser reports as the cause. `Failed`
 		## is the generic one.
 		Abort(AbortReason),
+		## Let the request reach the network as if no rule matched. As a
+		## rule's action it carves an exception out of a wider rule listed
+		## after it. As the answer to [release!] it lets a held request go on
+		## to the server.
+		Continue,
+		## Keep the request pending in the browser, so the page stays in
+		## whatever state it shows while the request is in flight, until
+		## [release!] answers it. Leaving the [with_routes!] block that holds
+		## it lets it through as `Continue`. Meant for fetches the page makes:
+		## a held navigation leaves the page with nothing to show.
+		Hold,
+	]
+
+	## The answers [release!] can give a held request: the [RouteAction]s
+	## that answer right away.
+	RouteAnswer : [
+		Fulfill({ status : U16, headers : List({ name : Str, value : Str }), body : List(U8) }),
+		Abort(AbortReason),
+		Continue,
 	]
 
 	## Why an `Abort` failed, as the browser reports it. Chromium tells them
@@ -1221,9 +1242,10 @@ Playwright :: [].{
 	## Answer requests from the page yourself instead of letting them reach
 	## the network, for as long as `body!` runs. Each [RouteRule] pairs a
 	## URL pattern and a [RouteMethod] with a [RouteAction]: a `Fulfill`
-	## response the server never sees, or an `Abort` that fails the request
-	## the way the network would. Requests no rule matches go through
-	## untouched.
+	## response the server never sees, an `Abort` that fails the request
+	## the way the network would, a `Continue` that lets it through, or a
+	## `Hold` that keeps it pending until [release!] answers it. Requests no
+	## rule matches go through untouched.
 	##
 	## `body!` receives the page with the rules in force, and everything
 	## inside the block must go through that page: the rules travel with
@@ -1241,8 +1263,8 @@ Playwright :: [].{
 	## of the options, `\` the next character literally, and everything
 	## else (`?` included) stands for itself.
 	##
-	## Held requests are answered while a command on the page waits for
-	## its reply (a click, an assertion, an evaluate), which is when the
+	## Intercepted requests are answered while a command on the page waits
+	## for its reply (a click, an assertion, an evaluate), which is when the
 	## driver is being read. A request the page fires while nothing is in
 	## flight waits for the next command, in a test the assertion that
 	## follows. Commands on the browser itself ([new_page!], [close!])
@@ -1255,14 +1277,80 @@ Playwright :: [].{
 	##     assert!(routed.find(".notice").has_text("Could not save"))
 	## })?
 	## ```
+	##
+	## A `Hold` rule is how a test looks at what the page shows while a
+	## request is in flight, without racing the server: the request stays
+	## pending, the assertion runs against the in-flight state, and
+	## [release!] then answers it however the test wants. Any request still
+	## held when the block ends is let through as `Continue`.
+	##
+	## ```
+	## page.with_routes!([{ pattern: "**/todos", method: POST, action: Hold }], |routed| {
+	##     routed.find("#save").click!()?
+	##     assert!(routed.find("#save").is_disabled())?
+	##     routed.release!(Fulfill({ status: 500, headers: [], body: Str.to_utf8("database on fire") }))?
+	##     assert!(routed.find(".notice").has_text("Could not save"))
+	## })?
+	## ```
 	with_routes! : Page([RouteError(Str), ..e]), List(RouteRule), (Page([RouteError(Str), ..e]) => Try(a, [RouteError(Str), ..e])) => Try(a, [RouteError(Str), ..e])
 	with_routes! = |page, rules, body!| {
 		routed = set_routes!(page, rules.concat(page.routes))?
 		result = body!(routed)
+		# The rules go first: from here on nothing new is held for this block,
+		# so what let_through_held! then takes is all there will ever be.
 		restored = set_routes!(page, page.routes)
+		let_through =
+			if rules.any(|rule| is_hold(rule.action)) {
+				let_through_held!(page)
+			} else {
+				Ok({})
+			}
 		match result {
-			Ok(value) => restored.map_ok(|_| value)
+			Ok(value) => {
+				let_through?
+				restored.map_ok(|_| value)
+			}
+
 			Err(e) => Err(e)
+		}
+	}
+
+	## Answer every request a `Hold` rule of [with_routes!] is keeping
+	## pending on this page, with one of the [RouteAnswer]s: a `Fulfill` the
+	## server never sees, an `Abort`, or `Continue` to let it reach the
+	## server after all. The page's `fetch` settles the way it would have,
+	## and the next command sees the page as it is afterwards. Returns how
+	## many requests were answered.
+	##
+	## The request need not be pending yet: a page fires many requests only
+	## after an earlier one has answered (a chunk after its probe, a retry
+	## after its back-off), so `release!` waits for one to be held, up to
+	## the browser's timeout, and then answers every request held by then.
+	## It does not wait for a second one, so the count is how many were held
+	## at that moment and says nothing about requests the page fires later:
+	## a test that counts them asserts on what the page shows once the last
+	## one is out, and releases after that.
+	##
+	## Every held request on the page is answered, whichever [with_routes!]
+	## block holds it. The end of a block is narrower: it lets through only
+	## what its own rules held, so a request an outer block holds stays
+	## pending through the blocks nested inside it.
+	##
+	## `NoHeldRequest` means none was pending by the timeout: the action that
+	## should have fired the request did not, or no `Hold` rule matched it.
+	## That is a failing test rather than a no-op, so it is an error.
+	##
+	## ```
+	## _ = routed.release!(Continue)?
+	## ```
+	release! : Page([RouteError(Str), NoHeldRequest, ..e]), RouteAnswer => Try(U64, [RouteError(Str), NoHeldRequest, ..e])
+	release! = |page, answer| {
+		held = await_held!(page)?
+		if held.is_empty() {
+			Err(NoHeldRequest)
+		} else {
+			answer_all!(page.context.browser.write_stdin!, held, answer)?
+			Ok(held.len())
 		}
 	}
 
@@ -3636,7 +3724,7 @@ initialize_browser! = |write_child!, read_child!, close_child!, browser_type, he
 	browser_guid = read_until_browser_guid!(read_child!)?
 
 	# Read the launch response (id:2)
-	_launch_response = read_until_response!({ read_child!, write_child!, routes: [] }, 2)?
+	_launch_response = read_until_response!({ read_child!, write_child!, routes: [], frame_guid: "" }, 2)?
 
 	# The child-bound closures are punned into the Browser record by name.
 	Ok(Playwright.Browser.{
@@ -3962,18 +4050,21 @@ no_bounding_box_response = |id| {
 # creates and answers the routes it meets from the page's rules.
 
 # What the read loop needs: where to read, and, for a page with routes,
-# where to write the answers and the routes to answer with. Built by
-# browser_link (no routes) and page_link (the page's).
+# where to write the answers, the routes to answer with, and the frame a
+# `Hold` records its held request in. Built by browser_link (no routes, so
+# no frame either) and page_link (the page's).
 browser_link = |browser| {
 	read_child!: browser.read_stdout!,
 	write_child!: browser.write_stdin!,
 	routes: [],
+	frame_guid: "",
 }
 
 page_link = |page| {
 	read_child!: page.context.browser.read_stdout!,
 	write_child!: page.context.browser.write_stdin!,
 	routes: page.routes,
+	frame_guid: page.frame_guid,
 }
 
 ## Install `routes` on the page and tell the driver which URLs to hold for
@@ -4141,30 +4232,209 @@ reply_to_route! = |link, route_guid, intercepted| {
 			Err(_) => crash unannounced
 		}
 
-	chosen = link.routes.keep_if(|rule| rule_matches(rule, request)).first()
-
 	bytes =
-		match chosen {
-			Ok({ action: Fulfill({ status, headers, body }), .. }) => {
-				msg : RouteFulfillMessage
-				msg = { id: route_msg_id, guid: route_guid, method: "fulfill", params: { status, headers, body: Base64.encode(body), isBase64: Bool.True }, metadata: {} }
-				encode_route_fulfill_message(msg)
-			}
-
-			Ok({ action: Abort(reason), .. }) => {
-				msg : RouteAbortMessage
-				msg = { id: route_msg_id, guid: route_guid, method: "abort", params: { errorCode: abort_error_code(reason) }, metadata: {} }
-				encode_route_abort_message(msg)
-			}
-
-			Err(_) => {
-				msg : RouteContinueMessage
-				msg = { id: route_msg_id, guid: route_guid, method: "continue", params: { isFallback: Bool.False }, metadata: {} }
-				encode_route_continue_message(msg)
-			}
+		match first_match(link.routes, request) {
+			Ok({ action: Fulfill(response), .. }) => answer_bytes(route_guid, Fulfill(response))
+			Ok({ action: Abort(reason), .. }) => answer_bytes(route_guid, Abort(reason))
+			Ok({ action: Continue, .. }) => answer_bytes(route_guid, Continue)
+			# A held request is not answered: it is written down on the page
+			# (an evaluate whose reply this loop skips like any route answer's),
+			# where release! or the end of the with_routes! block finds it.
+			Ok({ action: Hold, depth }) => evaluate_bytes(route_msg_id, link.frame_guid, hold_expression(route_guid, depth))
+			Err(_) => answer_bytes(route_guid, Continue)
 		}
 
 	send_message!(link.write_child!, bytes)
+}
+
+# The action of the first rule matching the request, and the rule's depth:
+# its place counted from the end of the list. A nested with_routes! block
+# puts its rules in front of the ones already there, so a rule's depth stays
+# the same however many blocks open inside its own, and a block's own rules
+# are the ones deeper than the list it started from is long.
+first_match : List(RouteRule), { url : Str, method : Str, .. } -> Try({ action : RouteAction, depth : U64 }, [NoRuleMatches])
+first_match = |rules, request|
+	match rules {
+		[] => Err(NoRuleMatches)
+		[rule, .. as rest] =>
+			if rule_matches(rule, request) {
+				Ok({ action: rule.action, depth: rest.len() + 1 })
+			} else {
+				first_match(rest, request)
+			}
+	}
+
+is_hold : RouteAction -> Bool
+is_hold = |action|
+	match action {
+		Hold => Bool.True
+		_ => Bool.False
+	}
+
+# The message that answers one intercepted request.
+answer_bytes : Str, RouteAnswer -> List(U8)
+answer_bytes = |route_guid, answer|
+	match answer {
+		Fulfill({ status, headers, body }) => {
+			msg : RouteFulfillMessage
+			msg = { id: route_msg_id, guid: route_guid, method: "fulfill", params: { status, headers, body: Base64.encode(body), isBase64: Bool.True }, metadata: {} }
+			encode_route_fulfill_message(msg)
+		}
+
+		Abort(reason) => {
+			msg : RouteAbortMessage
+			msg = { id: route_msg_id, guid: route_guid, method: "abort", params: { errorCode: abort_error_code(reason) }, metadata: {} }
+			encode_route_abort_message(msg)
+		}
+
+		Continue => {
+			msg : RouteContinueMessage
+			msg = { id: route_msg_id, guid: route_guid, method: "continue", params: { isFallback: Bool.False }, metadata: {} }
+			encode_route_continue_message(msg)
+		}
+	}
+
+# An `evaluateExpression` on a frame, with the given message id.
+evaluate_bytes : U64, Str, Str -> List(U8)
+evaluate_bytes = |id, frame_guid, expression| {
+	msg : EvaluateMessage
+	msg = {
+		id,
+		guid: frame_guid,
+		method: "evaluateExpression",
+		params: {
+			expression,
+			isFunction: Bool.False,
+			arg: { value: { v: "undefined" }, handles: [] },
+		},
+		metadata: {},
+	}
+	encode_evaluate_message(msg)
+}
+
+# Held requests live on the page rather than in this process: a route event
+# is read inside whichever command's loop it lands in, and that command
+# returns nothing but its own result, so the guid has nowhere to go in Roc
+# and would be lost by the time release! runs. The page's window outlives
+# every command, so the guid is appended to a list there, with the depth of
+# the rule that held it (see first_match), and taken back off it by
+# take_held_js. A navigation empties the list, which is right: the requests
+# it named die with the document. The same goes for a write that fails
+# because the document is already on its way out.
+hold_expression : Str, U64 -> Str
+hold_expression = |route_guid, depth|
+	"(window.__roc_playwright_held = (window.__roc_playwright_held || []).concat([{ guid: \"${route_guid}\", depth: ${depth.to_str()} }])).length"
+
+# A JS function that takes the requests held by rules deeper than `above`
+# off the page's list and returns their guids. Those held by shallower rules
+# stay, since they belong to a with_routes! block that is still open. 0
+# takes everything.
+take_held_js : U64 -> Str
+take_held_js = |above|
+	"(() => { const all = window.__roc_playwright_held || []; window.__roc_playwright_held = all.filter((h) => h.depth <= ${above.to_str()}); return all.filter((h) => h.depth > ${above.to_str()}).map((h) => h.guid); })"
+
+take_held_expression : U64 -> Str
+take_held_expression = |above|
+	"JSON.stringify(${take_held_js(above)}())"
+
+# Takes everything, but resolves only once at least one request is held, or
+# the deadline (in milliseconds) has passed. While this promise is pending
+# the loop that awaits it keeps writing down the `route` events that arrive,
+# so a request the page fires later is seen without a second command.
+await_held_expression : U64 -> Str
+await_held_expression = |deadline_ms|
+	Str.join_with(
+		[
+			"new Promise((resolve) => {",
+			"    const started = Date.now();",
+			"    const take = ${take_held_js(0)};",
+			"    const check = () => {",
+			"        if ((window.__roc_playwright_held || []).length > 0 || Date.now() - started > ${deadline_ms.to_str()}) {",
+			"            resolve(JSON.stringify(take()));",
+			"        } else {",
+			"            setTimeout(check, 10);",
+			"        }",
+			"    };",
+			"    check();",
+			"})",
+		],
+		"\n",
+	)
+
+# A `route` event that arrived while no command was in flight (a request
+# the page fired on a timer, or a retry) is still unread in the pipe, and
+# would only be written down while the read of the list waits, after the
+# driver has already evaluated that read. So the pipe is drained first with
+# a command that does nothing: its loop writes down whatever is queued, and
+# the driver runs those writes before the read that follows.
+drain_routes! = |page| {
+	drained = send_to_page!(page, evaluate_bytes(msg_id, page.frame_guid, "0"))?
+	_ = read_until_response!(drained, msg_id)?
+	Ok({})
+}
+
+# The guids of the requests held on the page, waiting up to the browser's
+# timeout for the first one (see release!).
+await_held! = |page| {
+	deadline_ms =
+		match page.context.browser.timeout {
+			TimeoutMilliseconds(ms) => ms
+			NoTimeout => pipe_timeout_ms
+		}
+	drain_routes!(page)?
+	read_held!(page, await_held_expression(deadline_ms))
+}
+
+read_held! = |page, expression| {
+	link = send_to_page!(page, evaluate_bytes(msg_id, page.frame_guid, expression))?
+	read_until_id!(link, msg_id, |bytes|
+		match decode_response_message(bytes) {
+			Ok(response) =>
+				match response.error {
+					Ok(err) => Err(RouteError(err.error.message))
+					Err(_) =>
+						match response.result {
+							Ok(result) =>
+								match result.value {
+									Ok(serialized) => parse_held(serialized.s)
+									Err(_) => Ok([])
+								}
+
+							Err(_) => Ok([])
+						}
+				}
+
+			Err(_) => Err(RouteError("roc-playwright: the record of held requests could not be read from the page: ${raw_message(bytes)}"))
+		})
+}
+
+parse_held : Str -> Try(List(Str), [RouteError(Str), ..e])
+parse_held = |json| {
+	guids : Try(List(Str), _)
+	guids = Json.parse(json)
+	guids.map_err(|_| RouteError("roc-playwright: the record of held requests on the page is not a list of route guids: ${json}"))
+}
+
+# Answer every held request in turn.
+answer_all! = |write_child!, guids, answer|
+	match guids {
+		[] => Ok({})
+		[guid, .. as rest] => {
+			send_message!(write_child!, answer_bytes(guid, answer))?
+			answer_all!(write_child!, rest, answer)
+		}
+	}
+
+# What the end of a with_routes! block does with the requests its own rules
+# still hold: lets them through, and unlike release! is content with none.
+# `page` is the page the block started from, with its rules back in force,
+# so the block's own rules are the ones deeper than `page.routes` is long,
+# and a request that matched them but is read only now is let through by
+# the loop that reads it.
+let_through_held! = |page| {
+	drain_routes!(page)?
+	held = read_held!(page, take_held_expression(page.routes.len()))?
+	answer_all!(page.context.browser.write_stdin!, held, Continue)
 }
 
 # Whether a rule applies to a request: its pattern matches the URL and its

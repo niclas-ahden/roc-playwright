@@ -66,9 +66,20 @@ page.with_routes!([{ pattern: "**/todos", method: POST, action: refused }], |rou
 })?
 ```
 
-The action is a `Fulfill` with a status, headers, and a body of bytes, or an `Abort(reason)` that fails the request the way the network would (`Abort(Failed)` for the generic case, `Abort(TimedOut)` etc. for a specific one).
+The action is a `Fulfill` with a status, headers, and a body of bytes, an `Abort(reason)` that fails the request the way the network would (`Abort(Failed)` for the generic case, `Abort(TimedOut)` etc. for a specific one), a `Continue` that lets it through (listed first, it carves an exception out of a wider rule after it), or a `Hold`.
 
-Patterns are Playwright's URL globs (`*`, `**/`, `{a,b}` with `\` to escape) matched against the whole URL.
+A `Hold` keeps the request pending in the browser, so the page stays in whatever it shows while the request is in flight (a disabled button, a "Saving..." label, a progress row) for as long as the test looks at it, without racing the server. `page.release!(answer)` then answers every held request with a `Fulfill`, an `Abort` or `Continue`, waiting first for one to be held if the page has not fired it yet, and returns how many it answered. A request still held when the block ends is let through.
+
+```roc
+page.with_routes!([{ pattern: "**/todos", method: POST, action: Hold }], |routed| {
+    routed.find("#save").click!()?
+    assert!(routed.find("#save").is_disabled())?
+    _ = routed.release!(Fulfill({ status: 500, headers: [], body: Str.to_utf8("on fire") }))?
+    assert!(routed.find(".notice").has_text("Could not save"))
+})?
+```
+
+Patterns are Playwright's URL globs (`*`, `**/`, `{a,b}` with `\` to escape) matched against the whole URL, query string included: a request for `/reviews.json?limit=20` needs `**/reviews.json*`.
 
 ## Documentation
 
