@@ -20,7 +20,7 @@
 ## which starts clean, and fails if anything of Playwright's or any test
 ## server is alive at all. Run it right after `roc tests.roc`.
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
 }
 
 import pf.Cmd
@@ -67,9 +67,12 @@ assert_none! = |windows| {
 run_matrix! : Bool, List(Str) => Try({}, _)
 run_matrix! = |windows, browsers| {
     bin = if windows { "tests/leak/leak-bin.exe" } else { "tests/leak/leak-bin" }
+    # WORKAROUND: roc-lang/roc#11442. With a warm module cache the build
+    # fails to link with `undefined symbol: roc__static_const_N`. Drop
+    # `--no-cache` when fixed.
     build_code =
         Cmd.new_str("roc")
-            .args_str(["build", "tests/leak/leak.roc", "--output=${bin}"])
+            .args_str(["build", "--no-cache", "tests/leak/leak.roc", "--output=${bin}"])
             .exec_exit_code!()?
     if build_code != 0 {
         return Err(BuildFailed(build_code))
@@ -101,26 +104,32 @@ scenario! = |windows, bin, browser, how| {
     child =
         Cmd.new_str(bin)
             .args_str([browser, mode_str(how)])
-            .spawn!()?
+            .stdout(Pipe)
+            .stderr(Capture)
+            .spawn!() ? |e| SpawnFailed(e)
 
     # leak.roc prints READY once its browser is up, so the process really
     # has something to leave behind when it goes down. A launch failure ends
-    # the child first, and the read fails instead of hanging.
-    match child.read_stdout!(6) {
+    # the child first, and the read runs dry instead of hanging.
+    match read_bytes!(child, 6) {
         Ok(bytes) if bytes == "READY\n".to_utf8() => {}
         _ => {
-            ended = child.kill_wait!()?
-            Stderr.line!(Str.from_utf8_lossy(ended.stderr))?
+            _ = child.kill!()
+            ended = child.wait!() ? |e| WaitFailed(e)
+            Stderr.line!(Str.from_utf8_lossy(ended.stderr_bytes))?
             return Err(NeverReady(name))
         }
     }
 
     match how {
         Exit | Abandon => {
-            ended = child.wait!()?
-            if ended.exit_code != 0 {
-                Stderr.line!(Str.from_utf8_lossy(ended.stderr))?
-                return Err(ExitedNonZero(name, ended.exit_code))
+            ended = child.wait!() ? |e| WaitFailed(e)
+            match ended.status {
+                Exited(0) => {}
+                status => {
+                    Stderr.line!(Str.from_utf8_lossy(ended.stderr_bytes))?
+                    return Err(ExitedNonZero(name, Str.inspect(status)))
+                }
             }
         }
         CtrlC => {
@@ -128,12 +137,12 @@ scenario! = |windows, bin, browser, how| {
             # command line. Unix only; Windows skips this scenario.
             pid = pids!(windows, ["${bin} ${browser} hang"])?.first() ? |_| NoPidFor(name)
             _ = Cmd.new_str("kill").args_str(["-INT", pid]).exec_exit_code!()?
-            _ = child.wait!()?
+            _ = child.wait!() ? |e| WaitFailed(e)
         }
         Kill => {
             # SIGKILL on Unix, TerminateProcess on Windows: what a crash or
             # Task Manager's End Task does.
-            child.kill!()?
+            child.kill!() ? |e| KillFailed(e)
         }
     }
 
@@ -152,6 +161,30 @@ scenario! = |windows, bin, browser, how| {
         Err(Leaked(name))
     }
 }
+
+## Read `len` bytes from the child's stdout, or fewer if it runs dry first.
+## Piped reads hand back one chunk of whatever has arrived, so this keeps
+## asking until it holds the whole thing.
+read_bytes! : Cmd.Child, U64 => Try(List(U8), _)
+read_bytes! = |child, len| {
+    var $read = []
+    var $open = Bool.True
+    while $read.len() < len and $open {
+        match child.read!(len - $read.len(), ready_timeout_ms) ? |e| ReadFailed(e) {
+            Stdout(bytes) if bytes.is_empty() => { $open = Bool.False }
+            Stdout(bytes) => { $read = $read.concat(bytes) }
+            Stderr(_) => {}
+            End => { $open = Bool.False }
+        }
+    }
+    Ok($read)
+}
+
+## How long a scenario waits for its browser to come up before calling it
+## dead. Generous: a cold cache downloads nothing, but a first launch on a
+## loaded machine is still slow.
+ready_timeout_ms : U64
+ready_timeout_ms = 120_000
 
 ## Pids matching now that were not in the baseline, polled until none are
 ## left or the attempts run out. Returns the ones that stayed.

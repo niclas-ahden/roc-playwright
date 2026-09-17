@@ -1,8 +1,8 @@
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
     playwright: "../../package/main.roc",
     url: "https://github.com/niclas-ahden/roc-url/releases/download/0.6.1/95CwyLo97aKZ5twTy6VtkmmhF6MFKMr7hvPeMi6U7bAF.tar.zst",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.5.0/AT7cTMFey3aL2SFQZcp2KTTDL82u79WepEy2yUcAtV4A.tar.zst",
 }
 
 import pf.Cmd
@@ -48,13 +48,13 @@ main! = |_args| {
     browser.close!()?
 
     # After close, trying to use the browser should fail
-    # The process is dead, so write_stdin should error
+    # The process is dead, so the driver's pipe should error
     result = page.navigate!(Url.to_str(url))
     _ = Assert.err(result) ? |e| BrowserDeadAfterClose(e)
 
-    # close! twice should fail (process is already dead)
+    # close! twice is a no-op: closing a closed driver succeeds
     double_close_result = browser.close!()
-    _ = Assert.err(double_close_result) ? |e| DoubleCloseFails(e)
+    _ = Assert.ok(double_close_result) ? |e| DoubleCloseSucceeds(e)
 
     Ok({})
 }

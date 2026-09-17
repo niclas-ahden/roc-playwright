@@ -27,9 +27,9 @@ Playwright :: [].{
 	## (`Cmd.spawn!`, or `Cmd.spawn_leashed!` to tie the driver's lifetime to
 	## the calling process). Everything past the spawn is reached through
 	## methods on the platform's own types instead: the launch functions
-	## require `cmd.args_str`, `child.write_stdin!`, `child.read_stdout!` and
-	## `child.kill!`, which basic-cli's `Cmd` and `Cmd.Child` carry under
-	## exactly those names.
+	## require `cmd.args_str`, `cmd.stdin`, `cmd.stdout`, `child.write!`,
+	## `child.read!` and `child.close!`, which basic-cli's `Cmd` and `Cmd.Child`
+	## carry under exactly those names.
 	##
 	## `driver` names the Playwright CLI to spawn, and defaults to `playwright`
 	## — what an install puts on PATH. Set it only when yours lives somewhere a
@@ -48,8 +48,10 @@ Playwright :: [].{
 	## types are. `err` is its I/O error type. All three stay generic so the
 	## package does not depend on any one platform.
 	##
-	## The platform's `read_stdout!` must return exactly the requested number
-	## of bytes or fail. Returning fewer would desync the message framing.
+	## The driver is spawned with its stdin and stdout piped, which the package
+	## asks for itself: the wire protocol needs both, so it is not the caller's
+	## choice. A read hands back one chunk of whatever has arrived, so the
+	## package reassembles chunks until it holds the whole message.
 	PlatformHooks(cmd, child, err) := {
 		new : Str -> cmd,
 		spawn! : cmd => Try(child, err),
@@ -62,7 +64,7 @@ Playwright :: [].{
 	Browser(err) := {
 		write_stdin! : List(U8) => Try({}, err),
 		read_stdout! : U64 => Try(List(U8), err),
-		kill! : {} => Try({}, err),
+		close_child! : {} => Try({}, err),
 		browser_guid : Str,
 		timeout : Timeout,
 	}
@@ -714,12 +716,13 @@ Playwright :: [].{
 	## Ways [launch!] and [launch_with!] can fail. `CouldNotStartDriver` means the
 	## driver process would not start, and carries why plus what to do about it;
 	## it is deliberately not named for one cause, since a missing binary and an
-	## unrunnable one both land here. `SpawnFailed` wraps the platform's own
-	## spawn error.
+	## unrunnable one both land here. `DriverIoFailed` is a read from or a write
+	## to the driver's pipe that failed, and carries the platform's error as
+	## text.
 	## `BrowserLaunchFailed` carries the driver's error message.
-	LaunchError(spawn, e) : [
+	LaunchError(e) : [
 		CouldNotStartDriver(Str),
-		SpawnFailed(spawn),
+		DriverIoFailed(Str),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
 		..e,
@@ -727,9 +730,9 @@ Playwright :: [].{
 
 	## Ways [launch_page!] and [launch_page_with!] can fail: everything in
 	## [LaunchError] plus the context and page creation steps.
-	LaunchPageError(spawn, e) : [
+	LaunchPageError(e) : [
 		CouldNotStartDriver(Str),
-		SpawnFailed(spawn),
+		DriverIoFailed(Str),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
 		NewContextError(Str),
@@ -1026,7 +1029,7 @@ Playwright :: [].{
 	## ```
 	## browser = Playwright.launch!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch! : PlatformHooks(cmd, child, LaunchError(s, e)), BrowserType => Try(Browser(LaunchError(s, e)), LaunchError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchError(s, e)), child.kill! : child => Try({}, LaunchError(s, e))]
+	launch! : PlatformHooks(cmd, child, s), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1049,7 +1052,7 @@ Playwright :: [].{
 	##     args: ["--use-fake-device-for-media-capture"],
 	## })?
 	## ```
-	launch_with! : PlatformHooks(cmd, child, LaunchError(s, e)), LaunchOptions => Try(Browser(LaunchError(s, e)), LaunchError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchError(s, e)), child.kill! : child => Try({}, LaunchError(s, e))]
+	launch_with! : PlatformHooks(cmd, child, s), LaunchOptions => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_with! = |hooks, { browser_type, headless, timeout, args }| {
 		# Bind the hooks to locals for reuse below. (Direct field calls on a
 		# plain record parameter resolve as method dispatch, so they would
@@ -1058,7 +1061,7 @@ Playwright :: [].{
 		spawn! = hooks.spawn!
 		driver = hooks.driver
 
-		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]))
+		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe))
 
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
@@ -1068,7 +1071,7 @@ Playwright :: [].{
 		shim = "${driver}.cmd"
 		child = match spawn_driver!(driver) {
 			Ok(c) => Ok(c)
-			Err(SpawnFailed(why)) =>
+			Err(why) =>
 				match spawn_driver!(shim) {
 					Ok(c) => Ok(c)
 
@@ -1079,7 +1082,7 @@ Playwright :: [].{
 					# `driver` at it, while `PermissionDenied` means it is
 					# already there and telling someone to install it sends
 					# them after the wrong thing.
-					Err(SpawnFailed(_)) =>
+					Err(_) =>
 						Err(
 							CouldNotStartDriver(
 								\\Could not spawn '${driver}': ${Str.inspect(why)}
@@ -1093,26 +1096,33 @@ Playwright :: [].{
 								,
 							),
 						)
-
-					Err(other) => Err(other)
 				}
-
-			Err(other) => Err(other)
 		}?
 
 		# Bind the child into per-browser closures once. Everything downstream
 		# (initialization and the cleanup on failure) goes through these.
-		write_stdin! = |bytes| child.write_stdin!(bytes)
-		read_stdout! = |len| child.read_stdout!(len)
-		kill! = |{}| child.kill!()
+		write_stdin! = |bytes| child.write!(bytes, pipe_timeout_ms).map_err(|e| DriverIoFailed(Str.inspect(e)))
+		read_stdout! = |len| {
+			var $read = []
+			while $read.len() < len {
+				match child.read!(len - $read.len(), pipe_timeout_ms) ? |e| DriverIoFailed(Str.inspect(e)) {
+					Stdout(bytes) if bytes.is_empty() => { return Err(DriverIoFailed(driver_gone)) }
+					Stdout(bytes) => { $read = $read.concat(bytes) }
+					Stderr(_) => {}
+					End => { return Err(DriverIoFailed(driver_gone)) }
+				}
+			}
+			Ok($read)
+		}
+		close_child! = |{}| child.close!().map_err(|e| DriverIoFailed(Str.inspect(e)))
 
 		# Initialization is wrapped to ensure cleanup on failure.
-		init_result = initialize_browser!(write_stdin!, read_stdout!, kill!, browser_type, headless, timeout, args)
+		init_result = initialize_browser!(write_stdin!, read_stdout!, close_child!, browser_type, headless, timeout, args)
 		match init_result {
 			Ok(browser) => Ok(browser)
 			Err(err) =>
-			# Kill the process before returning the error
-				match kill!({}) {
+			# Close the driver before returning the error
+				match close_child!({}) {
 					_ => Err(err)
 				}
 			}
@@ -1123,7 +1133,7 @@ Playwright :: [].{
 	## ```
 	## { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch_page! : PlatformHooks(cmd, child, LaunchPageError(s, e)), BrowserType => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchPageError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchPageError(s, e)), child.kill! : child => Try({}, LaunchPageError(s, e))]
+	launch_page! : PlatformHooks(cmd, child, s), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_page! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1142,7 +1152,7 @@ Playwright :: [].{
 	## ```
 	##
 	## Fields left out take the defaults [LaunchPageOptions] declares.
-	launch_page_with! : PlatformHooks(cmd, child, LaunchPageError(s, e)), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(s, e)), page : Page(LaunchPageError(s, e)) }, LaunchPageError(s, e)) where [cmd.args_str : cmd, List(Str) -> cmd, child.write_stdin! : child, List(U8) => Try({}, LaunchPageError(s, e)), child.read_stdout! : child, U64 => Try(List(U8), LaunchPageError(s, e)), child.kill! : child => Try({}, LaunchPageError(s, e))]
+	launch_page_with! : PlatformHooks(cmd, child, s), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_page_with! = |hooks, { browser_type, headless, timeout, args, has_touch, permissions }| {
 		browser = Playwright.launch_with!(hooks, { browser_type, headless, timeout, args })?
 		context = browser.new_context_with!({ has_touch, permissions })?
@@ -1886,18 +1896,20 @@ Playwright :: [].{
 		_ = send_message!(write_child!, encode_simple_message(close_msg))
 		_ = read_until_response!(browser_link(browser), msg_id)
 
-		# Then take the driver down. A program that never reaches close! is
-		# covered by the same driver: `run-driver` exits on stdin EOF and
-		# takes its browsers with it, so a plain `Cmd.spawn!` is leash
-		# enough. tests/leak/ checks both routes on every OS.
+		# Then take the driver down and reap it. A program that never reaches
+		# close! is covered by the same driver: `run-driver` exits on stdin
+		# EOF and takes its browsers with it, and the platform ends a child
+		# whose last reference is gone. tests/leak/ checks both routes on
+		# every OS. Closing an already-closed driver succeeds, so calling
+		# this twice is not an error.
 		#
 		# The platform error is carried as a Str rather than as the error value
 		# itself. Returning CloseFailed(err) makes the app's error union contain
 		# itself (platform errors are open unions, so `err` unifies with the
 		# union CloseFailed lands in) and the compiler rejects that as an
 		# anonymous recursive type.
-		kill_child! = browser.kill!
-		match kill_child!({}) {
+		close_driver! = browser.close_child!
+		match close_driver!({}) {
 			Ok(_) => Ok({})
 			Err(e) => Err(CloseFailed(Str.inspect(e)))
 		}
@@ -3311,6 +3323,20 @@ send_to_page! = |page, message_bytes| {
 msg_id : U64
 msg_id = 1000
 
+## Deadline for one read from or write to the driver's pipe. The platform
+## wants one and reads zero as "expired already", so this stands in for the
+## blocking pipe the framing is written against: far longer than any driver
+## call, and still an end to a pipe that has gone silent without closing. A
+## driver that dies closes its stdout, which the framing sees as EOF.
+pipe_timeout_ms : U64
+pipe_timeout_ms = 86_400_000
+
+## What a read that runs dry means: the driver's stdout is only closed once
+## the process behind it is gone. Reported rather than crashed, so a program
+## that used a browser after closing it gets an error it can handle.
+driver_gone : Str
+driver_gone = "roc-playwright: the driver closed its stdout, the Playwright process has probably died"
+
 # WORKAROUND: roc-lang/roc#11393 and roc-lang/roc#11441. Every JSON encode
 # lives in a file-level function with a concrete annotation. Calling
 # `Json.to_str` from inside a method crashes the compiler for the package
@@ -3575,7 +3601,7 @@ decode_json = |bytes|
 		Err(_) => Err(DecodeError)
 	}
 
-initialize_browser! = |write_child!, read_child!, kill!, browser_type, headless, timeout, args| {
+initialize_browser! = |write_child!, read_child!, close_child!, browser_type, headless, timeout, args| {
 	# Send initial message to initialize the connection
 	init_msg : InitializeMessage
 	init_msg = { id: 1, guid: "", method: "initialize", params: { sdkLanguage: "javascript" }, metadata: {} }
@@ -3616,7 +3642,7 @@ initialize_browser! = |write_child!, read_child!, kill!, browser_type, headless,
 	Ok(Playwright.Browser.{
 		write_stdin!: write_child!,
 		read_stdout!: read_child!,
-		kill!,
+		close_child!,
 		browser_guid,
 		timeout,
 	})

@@ -6,7 +6,7 @@ Browser automation in Roc using Playwright. We communicate with Playwright using
 
 ```roc
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.8.0/9boAetfXPFWCmMg5uavT1juSYFRw9zaGsWcfs4qspXde.tar.zst",
 }
 
@@ -41,7 +41,7 @@ main! = |_args| {
 
 ## Requirements
 
-- A platform that exposes process spawning with stdio pipes, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) (the `Cmd.spawn!`/`Cmd.Child` surface)
+- A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) (the `Cmd.spawn!`/`Cmd.Child` surface: `write!`, `read!` and `close!`)
 - Playwright installed and available in PATH (e.g., `pkgs.playwright-test` using Nix)
 
 ## Playwright version support

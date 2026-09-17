@@ -5,8 +5,8 @@
 ## Optional args: a filename pattern (substring) and --fail-fast.
 ## Optional env: ROC_SPEC_MAX_WORKERS (default 4), ROC_OPT (default speed).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.3.0/2v2CV8CLXRJmQRvfoHtPngAUGgE8jL6DDgXbugZhFVf5.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.5.0/AT7cTMFey3aL2SFQZcp2KTTDL82u79WepEy2yUcAtV4A.tar.zst",
 }
 
 import pf.Cmd
@@ -24,12 +24,18 @@ import spec.TestEnvironment
 
 effects = {
     spawn_test!: |file, envs|
+        # WORKAROUND: roc-lang/roc#11442. With a warm module cache,
+        # `--opt=speed` builds fail to link with `undefined symbol:
+        # roc__static_const_N`. Drop `--no-cache` when fixed.
         Cmd.new(OsStr.utf8("roc"))
-            .args_str(["--opt=${opt!({})}", file])
+            .args_str(["--opt=${opt!({})}", "--no-cache", file])
             .envs_str(envs)
-            .spawn!(),
-    poll!: Cmd.Child.poll!,
-    kill_wait!: Cmd.Child.kill_wait!,
+            .stdout(Capture)
+            .stderr(Capture)
+            .spawn_leashed!(),
+    try_wait!: Cmd.Child.try_wait!,
+    kill!: Cmd.Child.kill!,
+    wait!: Cmd.Child.wait!,
     list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
     print!: Stdout.line!,
     utc_now!: Utc.now!,
@@ -107,7 +113,7 @@ first_test_file! = |test_dir| {
 ## while every other `roc` sees that directory, takes it for a finished
 ## download, and dies with "PACKAGE DOWNLOAD FAILED ... FileNotFound". On a
 ## cold cache that wipes out every test that loses the race.
-warm_package_cache! : Str => Try({}, _)
+warm_package_cache! : Str => Try({}, [StdoutErr(_), ..])
 warm_package_cache! = |test_dir|
     match first_test_file!(test_dir) {
         Err(_) => Ok({})
@@ -120,13 +126,15 @@ warm_package_cache! = |test_dir|
         }
     }
 
-## Spawn one node test server for the given worker index
-spawn_worker! : U16 => Try({}, _)
+## Spawn one node test server for the given worker index. The child is handed
+## back because a managed child dies with its last reference: `main!` holds
+## these until the run is over.
+spawn_worker! : U16 => Try(Cmd.Child, _)
 spawn_worker! = |index| {
     port = base_port + index
-    cmd = Cmd.envs_str(Cmd.args_str(Cmd.new_str("node"), ["tests/server/main.mjs"]), [("PORT", port.to_str())])
-    _child = Cmd.spawn!(cmd) ? |e| ServerSpawnFailed(index, e)
-    Ok({})
+    cmd = Cmd.envs_str(Cmd.args_str(Cmd.new_str("node"), ["tests/server/main.mjs"]), [("PORT", port.to_str())]).stdin(Pipe)
+    child = Cmd.spawn_leashed!(cmd) ? |e| ServerSpawnFailed(index, e)
+    Ok(child)
 }
 
 ## One readiness probe against a worker's test server: any HTTP response
@@ -154,10 +162,8 @@ main! = |os_args| {
     Stdout.line!("Starting ${workers.to_str()} test servers...")?
 
     # Spawn all test servers first, then poll them all until every one
-    # answers (up to ~30s). They need no leash from the platform: each one
-    # exits when its stdin pipe closes, which happens however the runner dies
-    # (see tests/server/main.mjs).
-    TestEnvironment.start!({ sleep!: Sleep.millis! }, {
+    # answers (up to ~30s).
+    servers = TestEnvironment.start!({ sleep!: Sleep.millis! }, {
         count: workers,
         spawn!: spawn_worker!,
         ready!: |index| check_worker!(base_port + index),
@@ -175,6 +181,11 @@ main! = |os_args| {
         quiet: Bool.True,
         fail_fast,
     }, pattern)?
+
+    # Holding the handles until here kept the servers up for the whole run.
+    for server in servers {
+        _ = Cmd.Child.close!(server)
+    }
 
     passed = results.count_if(|r| r.passed)
     total = results.len()

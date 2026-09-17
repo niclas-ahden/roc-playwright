@@ -10,7 +10,7 @@
 ## and the Playwright driver does the same, so they follow the runner down
 ## however it dies. tests/leak/ is the check that this holds on every OS.
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.24.0/2mx1EsQx1HEG7HdbW2CwUpexvmJZW4nSCpjbur5GXyRe.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
 }
 
 import pf.Cmd
