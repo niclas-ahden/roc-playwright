@@ -143,9 +143,9 @@ scenario! = |windows, bin, browser, how| {
         }
     }
 
-    # The driver exits on stdin EOF and browsers on their pipe closing,
-    # which is quick but not instant, so give the table a moment to settle.
-    survivors = wait_clear!(windows, baseline, 100)?
+    # The driver force-kills a browser that is slow to close after 30s, so
+    # wait past that before calling it a leak.
+    survivors = wait_clear!(windows, baseline, 200)?
     if survivors.is_empty() {
         Stdout.line!("    clean")
     } else {

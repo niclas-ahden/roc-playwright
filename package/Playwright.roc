@@ -23,9 +23,8 @@ Playwright :: [].{
 	## ```
 	##
 	## Only these two are fields because they are genuine choices: which
-	## constructor builds a command, and which spawn flavor starts the driver
-	## (`Cmd.spawn!`, or `Cmd.spawn_leashed!` to tie the driver's lifetime to
-	## the calling process). Everything past the spawn is reached through
+	## constructor builds a command, and which function spawns it
+	## (`Cmd.spawn!`). Everything past the spawn is reached through
 	## methods on the platform's own types instead: the launch functions
 	## require `cmd.args_str`, `cmd.stdin`, `cmd.stdout`, `child.write!`,
 	## `child.read!` and `child.close!`, which basic-cli's `Cmd` and `Cmd.Child`
@@ -1084,69 +1083,103 @@ Playwright :: [].{
 
 		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe))
 
+		# On Unix the driver runs as the child of a shell, so the platform's
+		# kill at program exit hits the shell and the driver is left to close
+		# its browsers. Windows has no /bin/sh and falls through below.
+		spawn_behind_sh! = |name|
+			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe))
+
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
 		# a bare name resolves on Unix and nowhere else. Try the shim second
 		# rather than ask the caller which system it is on: on Unix the first
 		# spawn succeeds and this costs nothing.
 		shim = "${driver}.cmd"
-		child = match spawn_driver!(driver) {
-			Ok(c) => Ok(c)
-			Err(why) =>
-				match spawn_driver!(shim) {
-					Ok(c) => Ok(c)
 
-					# Report why the FIRST attempt failed, not the shim's. Off
-					# Windows the shim was never going to exist, so its
-					# NotFound would bury the real cause. And the cause is the
-					# whole message: `NotFound` means install it or point
-					# `driver` at it, while `PermissionDenied` means it is
-					# already there and telling someone to install it sends
-					# them after the wrong thing.
-					Err(_) =>
-						Err(
-							CouldNotStartDriver(
-								\\Could not spawn '${driver}': ${Str.inspect(why)}
-								\\
-								\\If it is not installed: `npm install -g playwright`, or add
-								\\'pkgs.playwright-test' to your Nix devShell. If it is installed
-								\\somewhere a PATH lookup will not find: set `driver` on the hooks
-								\\record you pass to launch.
-								\\
-								\\('${shim}', the name npm installs on Windows, failed too.)
-								,
-							),
-						)
+		# Behind the shell first. If that cannot spawn, or the driver never
+		# answers from there, start it directly rather than fail on a shell
+		# that will not run it.
+		for route in [BehindSh, Direct] {
+			spawned =
+				match route {
+					BehindSh => spawn_behind_sh!(driver).map_err(|_| NextRoute)
+					Direct =>
+						match spawn_driver!(driver) {
+							Ok(c) => Ok(c)
+							Err(why) =>
+								match spawn_driver!(shim) {
+									Ok(c) => Ok(c)
+
+									# Report why the FIRST attempt failed, not the
+									# shim's. Off Windows the shim was never going
+									# to exist, so its NotFound would bury the real
+									# cause. And the cause is the whole message:
+									# `NotFound` means install it or point `driver`
+									# at it, while `PermissionDenied` means it is
+									# already there and telling someone to install
+									# it sends them after the wrong thing.
+									Err(_) =>
+										Err(
+											GiveUp(
+												\\Could not spawn '${driver}': ${Str.inspect(why)}
+												\\
+												\\If it is not installed: `npm install -g playwright`, or add
+												\\'pkgs.playwright-test' to your Nix devShell. If it is installed
+												\\somewhere a PATH lookup will not find: set `driver` on the hooks
+												\\record you pass to launch.
+												\\
+												\\('${shim}', the name npm installs on Windows, failed too.)
+												,
+											),
+										)
+								}
+						}
 				}
-		}?
 
-		# Bind the child into per-browser closures once. Everything downstream
-		# (initialization and the cleanup on failure) goes through these.
-		write_stdin! = |bytes| child.write!(bytes, pipe_timeout_ms).map_err(|e| DriverIoFailed(Str.inspect(e)))
-		read_stdout! = |len| {
-			var $read = []
-			while $read.len() < len {
-				match child.read!(len - $read.len(), pipe_timeout_ms) ? |e| DriverIoFailed(Str.inspect(e)) {
-					Stdout(bytes) if bytes.is_empty() => { return Err(DriverIoFailed(driver_gone)) }
-					Stdout(bytes) => { $read = $read.concat(bytes) }
-					Stderr(_) => {}
-					End => { return Err(DriverIoFailed(driver_gone)) }
+			match spawned {
+				Err(NextRoute) => {}
+				Err(GiveUp(message)) => { return Err(CouldNotStartDriver(message)) }
+				Ok(child) => {
+					# Bind the child into per-browser closures once. Everything
+					# downstream (initialization and the cleanup on failure)
+					# goes through these.
+					write_stdin! = |bytes| child.write!(bytes, pipe_timeout_ms).map_err(|e| DriverIoFailed(Str.inspect(e)))
+					read_stdout! = |len| {
+						var $read = []
+						while $read.len() < len {
+							match child.read!(len - $read.len(), pipe_timeout_ms) ? |e| DriverIoFailed(Str.inspect(e)) {
+								Stdout(bytes) if bytes.is_empty() => { return Err(DriverIoFailed(driver_gone)) }
+								Stdout(bytes) => { $read = $read.concat(bytes) }
+								Stderr(_) => {}
+								End => { return Err(DriverIoFailed(driver_gone)) }
+							}
+						}
+						Ok($read)
+					}
+					close_child! = |{}| child.close!().map_err(|e| DriverIoFailed(Str.inspect(e)))
+
+					# Initialization is wrapped to ensure cleanup on failure.
+					match initialize_browser!(write_stdin!, read_stdout!, close_child!, browser_type, headless, timeout, args) {
+						Ok(browser) => { return Ok(browser) }
+						Err(err) => {
+							# Close the driver before returning the error
+							_ = close_child!({})
+							no_answer =
+								match err {
+									DriverIoFailed(msg) => msg == driver_gone
+									_ => Bool.False
+								}
+							if !(no_answer and route == BehindSh) {
+								return Err(err)
+							}
+						}
+					}
 				}
 			}
-			Ok($read)
 		}
-		close_child! = |{}| child.close!().map_err(|e| DriverIoFailed(Str.inspect(e)))
 
-		# Initialization is wrapped to ensure cleanup on failure.
-		init_result = initialize_browser!(write_stdin!, read_stdout!, close_child!, browser_type, headless, timeout, args)
-		match init_result {
-			Ok(browser) => Ok(browser)
-			Err(err) =>
-			# Close the driver before returning the error
-				match close_child!({}) {
-					_ => Err(err)
-				}
-			}
+		# Not reached: the direct route always returns.
+		Err(DriverIoFailed(driver_gone))
 	}
 
 	## Launch a browser and create a page in one step.
@@ -3424,6 +3457,13 @@ pipe_timeout_ms = 86_400_000
 ## that used a browser after closing it gets an error it can handle.
 driver_gone : Str
 driver_gone = "roc-playwright: the driver closed its stdout, the Playwright process has probably died"
+
+## `/bin/sh -c` script: runs the driver (`$0`, args `$@`) as a child of the
+## shell, on the shell's stdin. Stdin goes through fd 3 because dash gives a
+## background job /dev/null before `<&0` applies.
+driver_behind_sh : Str
+driver_behind_sh = "exec 3<&0; \"$0\" \"$@\" <&3 3<&- & exec 3<&-; wait $!"
+
 
 # WORKAROUND: roc-lang/roc#11393 and roc-lang/roc#11441. Every JSON encode
 # lives in a file-level function with a concrete annotation. Calling
