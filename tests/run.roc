@@ -24,11 +24,8 @@ import spec.TestEnvironment
 
 effects = {
     spawn_test!: |file, envs|
-        # WORKAROUND: roc-lang/roc#11442. With a warm module cache,
-        # `--opt=speed` builds fail to link with `undefined symbol:
-        # roc__static_const_N`. Drop `--no-cache` when fixed.
         Cmd.new(OsStr.utf8("roc"))
-            .args_str(["--opt=${opt!({})}", "--no-cache", file])
+            .args_str(["--opt=${opt!({})}", file])
             .envs_str(envs)
             .stdout(Capture)
             .stderr(Capture)

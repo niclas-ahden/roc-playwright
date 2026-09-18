@@ -67,12 +67,9 @@ assert_none! = |windows| {
 run_matrix! : Bool, List(Str) => Try({}, _)
 run_matrix! = |windows, browsers| {
     bin = if windows { "tests/leak/leak-bin.exe" } else { "tests/leak/leak-bin" }
-    # WORKAROUND: roc-lang/roc#11442. With a warm module cache the build
-    # fails to link with `undefined symbol: roc__static_const_N`. Drop
-    # `--no-cache` when fixed.
     build_code =
         Cmd.new_str("roc")
-            .args_str(["build", "--no-cache", "tests/leak/leak.roc", "--output=${bin}"])
+            .args_str(["build", "tests/leak/leak.roc", "--output=${bin}"])
             .exec_exit_code!()?
     if build_code != 0 {
         return Err(BuildFailed(build_code))
