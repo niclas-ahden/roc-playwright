@@ -20,7 +20,7 @@
 ## which starts clean, and fails if anything of Playwright's or any test
 ## server is alive at all. Run it right after `roc tests.roc`.
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.27.0/HZanbveSUDoJF8LypR663eH7PpaKEKG36eErEQzmV1Qs.tar.zst",
 }
 
 import pf.Cmd
@@ -40,7 +40,7 @@ suite_marks = playwright_marks.append("tests/server/main.mjs")
 
 main! : List(OsStr) => Try({}, _)
 main! = |os_args| {
-    args = os_args.drop_first(1).map(OsStr.display)
+    args = os_args.map(OsStr.display)
     windows = Env.platform!().os == WINDOWS
 
     if args == ["none"] {

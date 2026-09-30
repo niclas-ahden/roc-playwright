@@ -17,7 +17,7 @@
 ## * `hang`: sleep forever, for the caller to kill (Ctrl+C, kill -9,
 ##   TerminateProcess).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.27.0/HZanbveSUDoJF8LypR663eH7PpaKEKG36eErEQzmV1Qs.tar.zst",
     playwright: "../../package/main.roc",
 }
 
@@ -32,7 +32,7 @@ main! = |os_args| {
     args = os_args.map(OsStr.display)
 
     browser_type =
-        match args.get(1) {
+        match args.get(0) {
             Ok("firefox") => Firefox
             Ok("webkit") => WebKit
             Ok("chromium") => Chromium(DefaultChannel)
@@ -40,7 +40,7 @@ main! = |os_args| {
             _ => return Err(Usage("expected browser: chromium|chromium-full|firefox|webkit"))
         }
     mode =
-        match args.get(2) {
+        match args.get(1) {
             Ok("exit") => Exit
             Ok("abandon") => Abandon
             Ok("hang") => Hang

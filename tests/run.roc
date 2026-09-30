@@ -5,8 +5,8 @@
 ## Optional args: a filename pattern (substring) and --fail-fast.
 ## Optional env: ROC_SPEC_MAX_WORKERS (default 4), ROC_OPT (default speed).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.5.0/AT7cTMFey3aL2SFQZcp2KTTDL82u79WepEy2yUcAtV4A.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.27.0/HZanbveSUDoJF8LypR663eH7PpaKEKG36eErEQzmV1Qs.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.0/9ThTkhd7zrviwQpM3LvGd7pvzGhr4ZXNmWJV7pTJc9AJ.tar.zst",
 }
 
 import pf.Cmd
@@ -69,9 +69,8 @@ max_workers! = |{}|
 ## Parse command line args into pattern and flags
 parse_args : List(Str) -> { pattern : Str, fail_fast : Bool }
 parse_args = |args| {
-    rest = args.drop_first(1)
-    pattern = rest.keep_if(|a| !a.starts_with("--")).first().ok_or("")
-    fail_fast = rest.contains("--fail-fast")
+    pattern = args.keep_if(|a| !a.starts_with("--")).first().ok_or("")
+    fail_fast = args.contains("--fail-fast")
     { pattern, fail_fast }
 }
 
@@ -110,7 +109,7 @@ first_test_file! = |test_dir| {
 ## while every other `roc` sees that directory, takes it for a finished
 ## download, and dies with "PACKAGE DOWNLOAD FAILED ... FileNotFound". On a
 ## cold cache that wipes out every test that loses the race.
-warm_package_cache! : Str => Try({}, [StdoutErr(_), ..])
+warm_package_cache! : Str => Try({}, [StdoutErr(_)])
 warm_package_cache! = |test_dir|
     match first_test_file!(test_dir) {
         Err(_) => Ok({})

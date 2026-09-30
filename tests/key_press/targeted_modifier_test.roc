@@ -1,8 +1,8 @@
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.25.0/EsdzLgcAyudLYkMqiHXGuq2xMhPhoP1GRQWb14jZxZbY.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.27.0/HZanbveSUDoJF8LypR663eH7PpaKEKG36eErEQzmV1Qs.tar.zst",
     playwright: "../../package/main.roc",
-    url: "https://github.com/niclas-ahden/roc-url/releases/download/0.6.1/95CwyLo97aKZ5twTy6VtkmmhF6MFKMr7hvPeMi6U7bAF.tar.zst",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.5.0/AT7cTMFey3aL2SFQZcp2KTTDL82u79WepEy2yUcAtV4A.tar.zst",
+    url: "https://github.com/niclas-ahden/roc-url/releases/download/0.7.0/DCKNTirZCLugy1ZydPLrYpefR71RYq1HFUpgQVSNvaFy.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.0/9ThTkhd7zrviwQpM3LvGd7pvzGhr4ZXNmWJV7pTJc9AJ.tar.zst",
 }
 
 import pf.Cmd
