@@ -670,6 +670,7 @@ const route_test_page = `<!DOCTYPE html>
     <button id="post">Post a greeting</button>
     <button id="fetch-later">Fetch the greeting in a while</button>
     <button id="fetch-twice">Fetch the greeting twice</button>
+    <button id="post-large">Post a large greeting</button>
     <p id="result">Nothing fetched yet</p>
     <script>
         // Both buttons hit the same URL, GET and POST, so a rule can be
@@ -690,6 +691,9 @@ const route_test_page = `<!DOCTYPE html>
             setTimeout(() => request(), 500);
         });
         document.getElementById('fetch-twice').addEventListener('click', () => { request(); request(); });
+        // 8 MiB, far past the 1 MiB of driver output basic-cli lets wait unread
+        // by default: the route event carries the body, base64 encoded.
+        document.getElementById('post-large').addEventListener('click', () => request({ method: 'POST', body: 'x'.repeat(8 * 1024 * 1024) }));
     </script>
 </body>
 </html>`;

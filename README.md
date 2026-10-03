@@ -41,7 +41,7 @@ main! = |_args| {
 
 ## Requirements
 
-- A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) (the `Cmd.spawn!`/`Cmd.Child` surface: `write!`, `read!` and `close!`)
+- A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) (the `Cmd.spawn!`/`Cmd.Child` surface: `write!`, `read!` and `close!`, and `Cmd.pending_limit`)
 - Playwright installed and available in PATH (e.g., `pkgs.playwright-test` using Nix)
 
 ## Playwright version support

@@ -26,9 +26,9 @@ Playwright :: [].{
 	## constructor builds a command, and which function spawns it
 	## (`Cmd.spawn!`). Everything past the spawn is reached through
 	## methods on the platform's own types instead: the launch functions
-	## require `cmd.args_str`, `cmd.stdin`, `cmd.stdout`, `child.write!`,
-	## `child.read!` and `child.close!`, which basic-cli's `Cmd` and `Cmd.Child`
-	## carry under exactly those names.
+	## require `cmd.args_str`, `cmd.stdin`, `cmd.stdout`, `cmd.pending_limit`,
+	## `child.write!`, `child.read!` and `child.close!`, which basic-cli's `Cmd`
+	## and `Cmd.Child` carry under exactly those names.
 	##
 	## `driver` names the Playwright CLI to spawn, and defaults to `playwright`
 	## — what an install puts on PATH. Set it only when yours lives somewhere a
@@ -1049,7 +1049,7 @@ Playwright :: [].{
 	## ```
 	## browser = Playwright.launch!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch! : PlatformHooks(cmd, child, s), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch! : PlatformHooks(cmd, child, s), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1072,7 +1072,7 @@ Playwright :: [].{
 	##     args: ["--use-fake-device-for-media-capture"],
 	## })?
 	## ```
-	launch_with! : PlatformHooks(cmd, child, s), LaunchOptions => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_with! : PlatformHooks(cmd, child, s), LaunchOptions => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_with! = |hooks, { browser_type, headless, timeout, args }| {
 		# Bind the hooks to locals for reuse below. (Direct field calls on a
 		# plain record parameter resolve as method dispatch, so they would
@@ -1081,13 +1081,13 @@ Playwright :: [].{
 		spawn! = hooks.spawn!
 		driver = hooks.driver
 
-		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe))
+		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(driver_pending_limit_bytes))
 
 		# On Unix the driver runs as the child of a shell, so the platform's
 		# kill at program exit hits the shell and the driver is left to close
 		# its browsers. Windows has no /bin/sh and falls through below.
 		spawn_behind_sh! = |name|
-			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe))
+			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(driver_pending_limit_bytes))
 
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
@@ -1187,7 +1187,7 @@ Playwright :: [].{
 	## ```
 	## { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch_page! : PlatformHooks(cmd, child, s), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_page! : PlatformHooks(cmd, child, s), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_page! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1206,7 +1206,7 @@ Playwright :: [].{
 	## ```
 	##
 	## Fields left out take the defaults [LaunchPageOptions] declares.
-	launch_page_with! : PlatformHooks(cmd, child, s), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_page_with! : PlatformHooks(cmd, child, s), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
 	launch_page_with! = |hooks, { browser_type, headless, timeout, args, has_touch, permissions }| {
 		browser = Playwright.launch_with!(hooks, { browser_type, headless, timeout, args })?
 		context = browser.new_context_with!({ has_touch, permissions })?
@@ -4704,3 +4704,12 @@ expect glob_matches("**/a\\*b", "http://x/a*b")
 expect !glob_matches("**/a\\*b", "http://x/aXb")
 expect glob_matches("**", "")
 expect !glob_matches("**/todos", "")
+
+## How much of the driver's output may wait unread before the platform gives
+## up on the driver. One protocol message can carry a whole request body: a
+## routed or recorded request sends its post data, base64 encoded, in a
+## single event. basic-cli's default of 1 MiB cancels the driver without a
+## word when a page posts more than about 750 KiB, which then shows up as
+## the driver closing its stdout.
+driver_pending_limit_bytes : U64
+driver_pending_limit_bytes = 64 * 1024 * 1024
