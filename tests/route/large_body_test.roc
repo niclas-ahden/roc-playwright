@@ -29,7 +29,7 @@ worker_url! = |{}| {
 }
 
 # A routed request reaches the test as one driver message that carries its
-# whole body. The page posts 8 MiB, which basic-cli's default budget for
+# whole body. The page posts 4 MiB, which basic-cli's default budget for
 # unread driver output (1 MiB) would not hold: the driver would be cancelled
 # and the next command would find its stdout closed. The hooks are the plain
 # ones, so the budget is the package's own.

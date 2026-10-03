@@ -691,9 +691,9 @@ const route_test_page = `<!DOCTYPE html>
             setTimeout(() => request(), 500);
         });
         document.getElementById('fetch-twice').addEventListener('click', () => { request(); request(); });
-        // 8 MiB, far past the 1 MiB of driver output basic-cli lets wait unread
+        // 4 MiB, far past the 1 MiB of driver output basic-cli lets wait unread
         // by default: the route event carries the body, base64 encoded.
-        document.getElementById('post-large').addEventListener('click', () => request({ method: 'POST', body: 'x'.repeat(8 * 1024 * 1024) }));
+        document.getElementById('post-large').addEventListener('click', () => request({ method: 'POST', body: 'x'.repeat(4 * 1024 * 1024) }));
     </script>
 </body>
 </html>`;
