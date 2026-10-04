@@ -62,7 +62,9 @@ Playwright :: [].{
 		new : Str -> cmd,
 		spawn! : cmd => Try(child, err),
 		driver : Str ?? "playwright",
-		driver_output_buffer_bytes : U64 ?? 64 * 1024 * 1024,
+		# 64 MiB. Written out, since `64 * 1024 * 1024` here crashes Roc c5261f3
+		# and the nightlies of that time (fine on 058280a).
+		driver_output_buffer_bytes : U64 ?? 67_108_864,
 	}
 
 	## A running browser, returned by [launch!]. The three closures are built
