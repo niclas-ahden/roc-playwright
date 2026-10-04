@@ -38,10 +38,17 @@ Playwright :: [].{
 	## per-launch setting could only ever drift between two launches that meant
 	## to share it.
 	##
-	## Because the field carries a default, a hooks record written inline at the
-	## call — as the examples here and in the tests do — may leave it out. A
-	## record bound to a name first is a committed argument by then, and has to
-	## either spell the field or carry a `PlatformHooks` annotation.
+	## `driver_output_buffer_bytes` is how many bytes of the driver's output may
+	## wait unread before the platform gives up on the driver (basic-cli's
+	## `Cmd.pending_limit`). It defaults to 64 MiB. One driver message can carry
+	## a whole request body, base64 encoded, so the default lets a page post
+	## about 48 MiB at once. Raise it if your tests send more, or the driver
+	## dies with its stdout closed.
+	##
+	## Because those two fields carry defaults, a hooks record written inline at
+	## the call, as the examples here and in the tests do, may leave them out.
+	## A record bound to a name first is a committed argument by then, and has
+	## to either spell the fields or carry a `PlatformHooks` annotation.
 	##
 	## `cmd` and `child` are whatever the platform's command and child-process
 	## types are. `err` is its I/O error type. All three stay generic so the
@@ -55,6 +62,7 @@ Playwright :: [].{
 		new : Str -> cmd,
 		spawn! : cmd => Try(child, err),
 		driver : Str ?? "playwright",
+		driver_output_buffer_bytes : U64 ?? 64 * 1024 * 1024,
 	}
 
 	## A running browser, returned by [launch!]. The three closures are built
@@ -1080,14 +1088,15 @@ Playwright :: [].{
 		cmd_new = hooks.new
 		spawn! = hooks.spawn!
 		driver = hooks.driver
+		output_buffer_bytes = hooks.driver_output_buffer_bytes
 
-		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(driver_pending_limit_bytes))
+		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(output_buffer_bytes))
 
 		# On Unix the driver runs as the child of a shell, so the platform's
 		# kill at program exit hits the shell and the driver is left to close
 		# its browsers. Windows has no /bin/sh and falls through below.
 		spawn_behind_sh! = |name|
-			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(driver_pending_limit_bytes))
+			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(output_buffer_bytes))
 
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
@@ -4704,12 +4713,3 @@ expect glob_matches("**/a\\*b", "http://x/a*b")
 expect !glob_matches("**/a\\*b", "http://x/aXb")
 expect glob_matches("**", "")
 expect !glob_matches("**/todos", "")
-
-## How much of the driver's output may wait unread before the platform gives
-## up on the driver. One protocol message can carry a whole request body: a
-## routed or recorded request sends its post data, base64 encoded, in a
-## single event. basic-cli's default of 1 MiB cancels the driver without a
-## word when a page posts more than about 750 KiB, which then shows up as
-## the driver closing its stdout.
-driver_pending_limit_bytes : U64
-driver_pending_limit_bytes = 64 * 1024 * 1024
