@@ -5,8 +5,8 @@
 ## Optional args: a filename pattern (substring) and --fail-fast.
 ## Optional env: ROC_SPEC_MAX_WORKERS (default 4), ROC_OPT (default speed).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
-    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.6.0/9ThTkhd7zrviwQpM3LvGd7pvzGhr4ZXNmWJV7pTJc9AJ.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
+    spec: "https://github.com/niclas-ahden/roc-spec/releases/download/0.7.0/BGjQKbG9U3V8cH6mRbypUAFVqFoVEu6n9bsA3QmFL1f4.tar.zst",
 }
 
 import pf.Cmd
@@ -22,21 +22,25 @@ import pf.Utc
 import spec.Spec
 import spec.TestEnvironment
 
-effects = {
-    spawn_test!: |file, envs|
-        Cmd.new(OsStr.utf8("roc"))
-            .args_str(["--opt=${opt!({})}", file])
-            .envs_str(envs)
-            .stdout(Capture)
-            .stderr(Capture)
-            .spawn_leashed!(),
-    try_wait!: Cmd.Child.try_wait!,
-    kill!: Cmd.Child.kill!,
+## roc-spec's `PlatformHooks`: basic-cli's own functions, passed as they are.
+hooks = {
+    new: Cmd.new,
+    os_str: OsStr.from_str,
+    spawn!: Cmd.Command.spawn_leashed!,
+    poll!: Cmd.Child.poll!,
     wait!: Cmd.Child.wait!,
-    list_dir!: |dir| Path.list!(Path.utf8(dir)).map_ok(|entries| entries.map(Path.display)),
+    kill!: Cmd.Child.kill!,
+    close!: Cmd.Child.close!,
+    path: Path.utf8,
+    list!: Path.list!,
     print!: Stdout.line!,
-    utc_now!: Utc.now!,
-    sleep_millis!: Sleep.millis!,
+    now!: Utc.now!,
+    sleep!: Sleep.millis!,
+    env_var!: Env.var_str!,
+    # WORKAROUND: a lambda rather than `Http.send!` itself, because roc-spec
+    # passing a bare `{}` as its `SendOptions` crashes Roc. Pass `Http.send!`
+    # once roc-lang/roc#12606 is fixed.
+    http_send!: |request| Http.send!(request, {}),
 }
 
 base_port : U16
@@ -109,7 +113,7 @@ first_test_file! = |test_dir| {
 ## while every other `roc` sees that directory, takes it for a finished
 ## download, and dies with "PACKAGE DOWNLOAD FAILED ... FileNotFound". On a
 ## cold cache that wipes out every test that loses the race.
-warm_package_cache! : Str => Try({}, [StdoutErr(_)])
+warm_package_cache! : Str => Try({}, [StdoutErr(_), Interrupted])
 warm_package_cache! = |test_dir|
     match first_test_file!(test_dir) {
         Err(_) => Ok({})
@@ -117,7 +121,7 @@ warm_package_cache! = |test_dir|
             Stdout.line!("Warming the package cache...")?
             # Whatever this reports about the file itself is the test run's
             # business, so the output and the exit code are both dropped here.
-            _ = Cmd.new(OsStr.utf8("roc")).args_str(["check", file]).exec_output!()
+            _ = Cmd.new("roc").args(["check", OsStr.from_str(file)]).run!()
             Ok({})
         }
     }
@@ -128,8 +132,8 @@ warm_package_cache! = |test_dir|
 spawn_worker! : U16 => Try(Cmd.Child, _)
 spawn_worker! = |index| {
     port = base_port + index
-    cmd = Cmd.envs_str(Cmd.args_str(Cmd.new_str("node"), ["tests/server/main.mjs"]), [("PORT", port.to_str())]).stdin(Pipe)
-    child = Cmd.spawn_leashed!(cmd) ? |e| ServerSpawnFailed(index, e)
+    cmd = Cmd.new("node").args(["tests/server/main.mjs"]).env("PORT", OsStr.from_str(port.to_str())).stdin(Pipe)
+    child = cmd.spawn_leashed!() ? |e| ServerSpawnFailed(index, e)
     Ok(child)
 }
 
@@ -141,7 +145,7 @@ check_worker! = |port|
     match Url.parse("http://localhost:${port.to_str()}") {
         Err(_) => Bool.False
         Ok(u) =>
-            match Http.get_utf8!(u) {
+            match Http.get_utf8!(u, {}) {
                 Ok(_) => Bool.True
                 Err(_) => Bool.False
             }
@@ -159,7 +163,7 @@ main! = |os_args| {
 
     # Spawn all test servers first, then poll them all until every one
     # answers (up to ~30s).
-    servers = TestEnvironment.start!({ sleep!: Sleep.millis! }, {
+    servers = TestEnvironment.start!(hooks, {
         count: workers,
         spawn!: spawn_worker!,
         ready!: |index| check_worker!(base_port + index),
@@ -169,7 +173,8 @@ main! = |os_args| {
 
     Stdout.line!("All ${workers.to_str()} test servers ready")?
 
-    results = Spec.run_filtered!(effects, "tests", {
+    results = Spec.run_filtered!(hooks, "tests", {
+        test_command: ["roc", "--opt=${opt!({})}"],
         max_workers: workers,
         worker_envs,
         before_each!: |_index| Ok({}),

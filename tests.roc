@@ -10,7 +10,7 @@
 ## and the Playwright driver does the same, so they follow the runner down
 ## however it dies. tests/leak/ is the check that this holds on every OS.
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 }
 
 import pf.Cmd
@@ -22,15 +22,17 @@ main! : List(OsStr) => Try({}, _)
 main! = |os_args| {
     Stdout.line!("Running Playwright tests in parallel...")?
 
-    code =
-        Cmd.new(OsStr.utf8("roc"))
-            .args([OsStr.utf8("tests/run.roc"), OsStr.utf8("--")].concat(os_args))
-            .exec_exit_code!()?
+    status =
+        Cmd.new(OsStr.from_str("roc"))
+            .args([OsStr.from_str("tests/run.roc"), OsStr.from_str("--")].concat(os_args))
+            .inherit_stdio()
+            .run!()?
+            .status
 
-    if code == 0 {
+    if status == Exited(0) {
         Ok({})
     } else {
-        Stderr.line!("Playwright tests failed with exit code ${code.to_str()}")?
-        Err(TestsFailed(code))
+        Stderr.line!("Playwright tests failed: ${Str.inspect(status)}")?
+        Err(TestsFailed(status))
     }
 }

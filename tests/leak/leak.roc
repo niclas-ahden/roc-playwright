@@ -17,7 +17,7 @@
 ## * `hang`: sleep forever, for the caller to kill (Ctrl+C, kill -9,
 ##   TerminateProcess).
 app [main!] {
-    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+    pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
     playwright: "../../package/main.roc",
 }
 
