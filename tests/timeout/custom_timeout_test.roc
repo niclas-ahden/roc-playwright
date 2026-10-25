@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright
@@ -38,7 +39,7 @@ main! = |_args| {
 
     # Launch with 5 second timeout - element appears after 500ms, so this should succeed
     { browser: browser1, page: page1 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(5000) },
     )?
 
@@ -54,7 +55,7 @@ main! = |_args| {
 
     # Launch with 100ms timeout - element appears after 500ms, so this should fail
     { browser: browser2, page: page2 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(100) },
     )?
 

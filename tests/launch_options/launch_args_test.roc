@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright
@@ -44,7 +45,7 @@ main! = |_args| {
     # `Chromium(Full)` also exercises the channel launch path (a `launch`
     # message that carries a `channel` field).
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         {
             browser_type: Chromium(Full),
             timeout: TimeoutMilliseconds(10000),
@@ -66,7 +67,7 @@ main! = |_args| {
     # Without the grant, the same query is not "granted", confirming the
     # state above came from our `permissions` option rather than a default.
     { browser: browser2, page: page2 } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         {
             browser_type: Chromium(Full),
             timeout: TimeoutMilliseconds(10000),

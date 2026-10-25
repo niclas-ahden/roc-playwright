@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright
@@ -35,7 +36,7 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         Chromium(DefaultChannel),
     )?
     page.navigate!(Url.to_str(Url.append_path(url, ["attributes-test"]).ok_or(url)))?

@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import pf.Stdout
@@ -43,7 +44,7 @@ main! = |_args|
         Err(_) => {
             url = worker_url!({})
             { browser, page } = Playwright.launch_page!(
-                { new: Cmd.new_str, spawn!: Cmd.spawn! },
+                { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
                 WebKit,
             )?
 

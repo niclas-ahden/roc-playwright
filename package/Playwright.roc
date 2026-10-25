@@ -1,14 +1,14 @@
 ## A Roc library for browser automation, powered by [Playwright](https://playwright.dev/).
 ##
 ## ```
-## { browser, page } = Playwright.launch_page!({ new: Cmd.new_str, spawn!: Cmd.spawn! }, Chromium(DefaultChannel))?
+## { browser, page } = Playwright.launch_page!({ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis }, Chromium(DefaultChannel))?
 ## Playwright.navigate!(page, "https://example.com")?
 ## title = Playwright.get_title!(page)?
 ## browser.close!()
 ## ```
 ##
 ## The [PlatformHooks] record wires the package to the host platform's process-spawning
-## API, here [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module. Everything after launch goes
+## API, here [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s own functions, passed as they are. Everything after launch goes
 ## through the [Browser] and [Page] values it returns.
 import base64.Base64
 
@@ -16,18 +16,22 @@ Playwright :: [].{
 
 	## The host platform's process-spawning API, wired in at launch. Roc has no
 	## parameterized modules, so the entry points arrive as plain function
-	## values, from [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s `Cmd` module:
+	## values, [`niclas-ahden/basic-cli`](https://www.github.com/niclas-ahden/basic-cli)'s own, passed as they are:
 	##
 	## ```
-	## { new: Cmd.new_str, spawn!: Cmd.spawn! }
+	## { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis }
 	## ```
 	##
-	## Only these two are fields because they are genuine choices: which
-	## constructor builds a command, and which function spawns it
-	## (`Cmd.spawn!`). Everything past the spawn is reached through
-	## methods on the platform's own types instead: the launch functions
-	## require `cmd.args_str`, `cmd.stdin`, `cmd.stdout`, `cmd.pending_limit`,
-	## `child.write!`, `child.read!` and `child.close!`, which basic-cli's `Cmd`
+	## `new`, `os_str` and `millis` are here because they build values only
+	## the platform can make: a command, the `OsStr` its program and arguments
+	## are, and the `Duration` a pipe read or write waits for. `spawn!` is a
+	## genuine choice. `Cmd.Command.spawn_leashed!` takes the driver and its
+	## browsers down with the program however it dies, Ctrl+C and crashes
+	## included, so a cancelled test run leaves no browser behind. Pass
+	## `Cmd.Command.spawn!` on a platform without it. Everything past that is
+	## reached through methods on the platform's own types: the command's
+	## `args`, `stdin`, `stdout` and `pending_limit`, and the child's
+	## `write_bytes!`, `read!` and `close!`, which basic-cli's `Cmd.Command`
 	## and `Cmd.Child` carry under exactly those names.
 	##
 	## `driver` names the Playwright CLI to spawn, and defaults to `playwright`
@@ -48,19 +52,23 @@ Playwright :: [].{
 	## Because those two fields carry defaults, a hooks record written inline at
 	## the call, as the examples here and in the tests do, may leave them out.
 	## A record bound to a name first is a committed argument by then, and has
-	## to either spell the fields or carry a `PlatformHooks` annotation.
+	## to either spell the fields or carry a `PlatformHooks` annotation, for
+	## basic-cli `Playwright.PlatformHooks(OsStr, Cmd.Command, Cmd.Child, [CmdErr(Cmd.Err), Interrupted], Duration)`.
 	##
-	## `cmd` and `child` are whatever the platform's command and child-process
-	## types are. `err` is its I/O error type. All three stay generic so the
-	## package does not depend on any one platform.
+	## `os_str`, `cmd`, `child` and `duration` are whatever the platform's
+	## native string, command, child-process and duration types are. `err` is
+	## its spawn error type. All stay generic so the package does not depend
+	## on any one platform.
 	##
 	## The driver is spawned with its stdin and stdout piped, which the package
 	## asks for itself: the wire protocol needs both, so it is not the caller's
 	## choice. A read hands back one chunk of whatever has arrived, so the
 	## package reassembles chunks until it holds the whole message.
-	PlatformHooks(cmd, child, err) := {
-		new : Str -> cmd,
+	PlatformHooks(os_str, cmd, child, err, duration) := {
+		new : os_str -> cmd,
+		os_str : Str -> os_str,
 		spawn! : cmd => Try(child, err),
+		millis : U64 -> duration,
 		driver : Str ?? "playwright",
 		# 64 MiB. Written out, since `64 * 1024 * 1024` here crashes Roc c5261f3
 		# and the nightlies of that time (fine on 058280a).
@@ -69,10 +77,12 @@ Playwright :: [].{
 
 	## A running browser, returned by [launch!]. The three closures are built
 	## once at launch with the spawned driver process bound inside, so every
-	## call downstream is unary. `err` is the platform's I/O error type.
+	## call downstream is unary. `read_chunk!` returns the next chunk of the
+	## driver's output, however much has arrived. `err` is the platform's I/O
+	## error type.
 	Browser(err) := {
 		write_stdin! : List(U8) => Try({}, err),
-		read_stdout! : U64 => Try(List(U8), err),
+		read_chunk! : {} => Try(List(U8), err),
 		close_child! : {} => Try({}, err),
 		browser_guid : Str,
 		timeout : Timeout,
@@ -1059,7 +1069,7 @@ Playwright :: [].{
 	## ```
 	## browser = Playwright.launch!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch! : PlatformHooks(cmd, child, s), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch! : PlatformHooks(_, _, _, _, _), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e))
 	launch! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1082,23 +1092,30 @@ Playwright :: [].{
 	##     args: ["--use-fake-device-for-media-capture"],
 	## })?
 	## ```
-	launch_with! : PlatformHooks(cmd, child, s), LaunchOptions => Try(Browser(LaunchError(e)), LaunchError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_with! : PlatformHooks(_, _, _, _, _), LaunchOptions => Try(Browser(LaunchError(e)), LaunchError(e))
 	launch_with! = |hooks, { browser_type, headless, timeout, args }| {
 		# Bind the hooks to locals for reuse below. (Direct field calls on a
 		# plain record parameter resolve as method dispatch, so they would
 		# need parens anyway: `(hooks.new)(...)`.)
-		cmd_new = hooks.new
+		new = hooks.new
+		os_str = hooks.os_str
 		spawn! = hooks.spawn!
+		millis = hooks.millis
 		driver = hooks.driver
 		output_buffer_bytes = hooks.driver_output_buffer_bytes
 
-		spawn_driver! = |name| spawn!(cmd_new(name).args_str(["run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(output_buffer_bytes))
+		# The wire protocol needs both pipes, so the package asks for them.
+		command = |program, arguments| new(os_str(program)).args(arguments.map(os_str)).stdin(Pipe).stdout(Pipe).pending_limit(output_buffer_bytes)
+
+		spawn_driver! = |name| spawn!(command(name, ["run-driver"]))
 
 		# On Unix the driver runs as the child of a shell, so the platform's
 		# kill at program exit hits the shell and the driver is left to close
 		# its browsers. Windows has no /bin/sh and falls through below.
 		spawn_behind_sh! = |name|
-			spawn!(cmd_new("/bin/sh").args_str(["-c", driver_behind_sh, name, "run-driver"]).stdin(Pipe).stdout(Pipe).pending_limit(output_buffer_bytes))
+			spawn!(command("/bin/sh", ["-c", driver_behind_sh, name, "run-driver"]))
+
+		pipe_wait = millis(pipe_timeout_ms)
 
 		# npm installs the CLI as `<name>.cmd` on Windows and never as an
 		# `.exe`, while a spawn's PATH search there only ever appends `.exe`. So
@@ -1154,23 +1171,25 @@ Playwright :: [].{
 					# Bind the child into per-browser closures once. Everything
 					# downstream (initialization and the cleanup on failure)
 					# goes through these.
-					write_stdin! = |bytes| child.write!(bytes, pipe_timeout_ms).map_err(|e| DriverIoFailed(Str.inspect(e)))
-					read_stdout! = |len| {
-						var $read = []
-						while $read.len() < len {
-							match child.read!(len - $read.len(), pipe_timeout_ms) ? |e| DriverIoFailed(Str.inspect(e)) {
-								Stdout(bytes) if bytes.is_empty() => { return Err(DriverIoFailed(driver_gone)) }
-								Stdout(bytes) => { $read = $read.concat(bytes) }
-								Stderr(_) => {}
-								End => { return Err(DriverIoFailed(driver_gone)) }
+					write_stdin! = |bytes| child.write_bytes!(bytes, pipe_wait).map_err(|e| DriverIoFailed(Str.inspect(e)))
+					# The next chunk of the driver's output, however much has
+					# arrived. Its stderr is not part of the protocol.
+					read_chunk! = |{}| {
+						var $chunk = []
+						while $chunk.is_empty() {
+							match child.read!(pipe_wait) {
+								Ok(Stdout(bytes)) => { $chunk = bytes }
+								Ok(Stderr(_)) => {}
+								Err(EndOfInput) => { return Err(DriverIoFailed(driver_gone)) }
+								Err(e) => { return Err(DriverIoFailed(Str.inspect(e))) }
 							}
 						}
-						Ok($read)
+						Ok($chunk)
 					}
 					close_child! = |{}| child.close!().map_err(|e| DriverIoFailed(Str.inspect(e)))
 
 					# Initialization is wrapped to ensure cleanup on failure.
-					match initialize_browser!(write_stdin!, read_stdout!, close_child!, browser_type, headless, timeout, args) {
+					match initialize_browser!(write_stdin!, read_chunk!, close_child!, browser_type, headless, timeout, args) {
 						Ok(browser) => { return Ok(browser) }
 						Err(err) => {
 							# Close the driver before returning the error
@@ -1198,7 +1217,7 @@ Playwright :: [].{
 	## ```
 	## { browser, page } = Playwright.launch_page!(hooks, Chromium(DefaultChannel))?
 	## ```
-	launch_page! : PlatformHooks(cmd, child, s), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_page! : PlatformHooks(_, _, _, _, _), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e))
 	launch_page! = |hooks, browser_type|
 		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
 		# bare value instead of a one-field record. Revert when fixed.
@@ -1217,7 +1236,7 @@ Playwright :: [].{
 	## ```
 	##
 	## Fields left out take the defaults [LaunchPageOptions] declares.
-	launch_page_with! : PlatformHooks(cmd, child, s), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e)) where [cmd.args_str : cmd, List(Str) -> cmd, cmd.stdin : cmd, [Default, Inherit, Null, Bytes(List(U8)), Pipe] -> cmd, cmd.stdout : cmd, [Default, Inherit, Null, Capture, Pipe, Tee] -> cmd, cmd.pending_limit : cmd, U64 -> cmd, child.write! : child, List(U8), U64 => Try({}, s), child.read! : child, U64, U64 => Try([Stdout(List(U8)), Stderr(List(U8)), End], s), child.close! : child => Try({}, s)]
+	launch_page_with! : PlatformHooks(_, _, _, _, _), LaunchPageOptions => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e))
 	launch_page_with! = |hooks, { browser_type, headless, timeout, args, has_touch, permissions }| {
 		browser = Playwright.launch_with!(hooks, { browser_type, headless, timeout, args })?
 		context = browser.new_context_with!({ has_touch, permissions })?
@@ -1245,14 +1264,14 @@ Playwright :: [].{
 	new_context_with! : Browser([NewContextError(Str), ..e]), ContextOptions => Try(Context([NewContextError(Str), ..e]), [NewContextError(Str), ..e])
 	new_context_with! = |browser, { has_touch, permissions }| {
 		write_child! = browser.write_stdin!
-		read_child! = browser.read_stdout!
+		read_chunk! = browser.read_chunk!
 
 		context_msg : NewContextMessage
 		context_msg = { id: msg_id, guid: browser.browser_guid, method: "newContext", params: { hasTouch: has_touch, permissions }, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(context_msg)))?
 
-		context_guid = read_until_create_guid!(read_child!, "BrowserContext")?
-		response = read_until_response!(browser_link(browser), msg_id)?
+		{ guid: context_guid, rest } = read_until_create_guid!(read_chunk!, "BrowserContext", [])?
+		response = read_until_response!({ ..browser_link(browser), pending: rest }, msg_id)?
 
 		match response.error {
 			Ok(err) => Err(NewContextError(err.error.message))
@@ -1269,13 +1288,13 @@ Playwright :: [].{
 	new_page! = |context| {
 		browser = context.browser
 		write_child! = browser.write_stdin!
-		read_child! = browser.read_stdout!
+		read_chunk! = browser.read_chunk!
 		page_msg : SimpleMessage
 		page_msg = { id: msg_id, guid: context.context_guid, method: "newPage", params: {}, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(page_msg)))?
 
-		{ page_guid, frame_guid } = read_until_page_and_frame!(read_child!)?
-		response = read_until_response!(browser_link(browser), msg_id)?
+		{ page_guid, frame_guid, rest } = read_until_page_and_frame!(read_chunk!)?
+		response = read_until_response!({ ..browser_link(browser), pending: rest }, msg_id)?
 
 		match response.error {
 			Ok(err) => Err(NewPageError(err.error.message))
@@ -1750,15 +1769,15 @@ Playwright :: [].{
 		context = page.context
 		browser = context.browser
 		write_child! = browser.write_stdin!
-		read_child! = browser.read_stdout!
+		read_chunk! = browser.read_chunk!
 
 		# Create a CDP session
 		cdp_msg : CdpSessionMessage
 		cdp_msg = { id: msg_id, guid: context.context_guid, method: "newCDPSession", params: { page: { guid: page.page_guid } }, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
 
-		cdp_session_guid = read_until_create_guid!(read_child!, "CDPSession")?
-		_cdp_response = read_until_response!(page_link(page), msg_id)?
+		{ guid: cdp_session_guid, rest } = read_until_create_guid!(read_chunk!, "CDPSession", [])?
+		_cdp_response = read_until_response!({ ..page_link(page), pending: rest }, msg_id)?
 
 		# synthesizeScrollGesture distances: the vector the finger moves
 		x_distance = end_x - start_x
@@ -1810,15 +1829,15 @@ Playwright :: [].{
 		context = page.context
 		browser = context.browser
 		write_child! = browser.write_stdin!
-		read_child! = browser.read_stdout!
+		read_chunk! = browser.read_chunk!
 
 		# Create a CDP session
 		cdp_msg : CdpSessionMessage
 		cdp_msg = { id: msg_id, guid: context.context_guid, method: "newCDPSession", params: { page: { guid: page.page_guid } }, metadata: {} }
 		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
 
-		cdp_session_guid = read_until_create_guid!(read_child!, "CDPSession")?
-		_cdp_response = read_until_response!(page_link(page), msg_id)?
+		{ guid: cdp_session_guid, rest } = read_until_create_guid!(read_chunk!, "CDPSession", [])?
+		_cdp_response = read_until_response!({ ..page_link(page), pending: rest }, msg_id)?
 
 		# synthesizeScrollGesture distances: the vector the finger moves
 		x_distance = end_x - start_x
@@ -3507,31 +3526,60 @@ send_message! = |write_child!, message_bytes| {
 	}
 }
 
-## Receive one length-prefixed message from the driver.
+## Receive one length-prefixed message from the driver. A read hands back
+## whatever has arrived, which can end inside a message or run past it, so
+## this starts from `pending`, the bytes already read past the last message,
+## reads chunks until it holds a whole message, and returns that message with
+## the bytes after it.
 ##
-## Note: crashes if the read does not return the expected number of bytes, since
-## the platform contract has then been broken. We rather crash than have undefined
-## behaviour in that case.
-receive_message_bytes! = |read_child!| {
-	# Read 4-byte length prefix. An empty read is EOF: the driver process died
-	# or closed its stdout. A partial read means the platform broke the
-	# exactly-n-bytes contract.
-	length_bytes = read_child!(4)?
-	if length_bytes.len() == 0 {
-		crash "roc-playwright: the driver closed its stdout, the Playwright process has probably died"
-	} else if length_bytes.len() != 4 {
-		crash "roc-playwright: read_stdout! returned fewer bytes than requested, message framing is broken"
-	} else {
-		length = decode_u32_le(length_bytes).to_u64()
-
-		body = read_child!(length)?
-		if body.len() != length {
-			crash "roc-playwright: read_stdout! returned fewer bytes than requested, message framing is broken"
-		} else {
-			Ok(body)
-		}
+## Nothing outlives a call, so the bytes read past a message are handed from
+## one read to the next within a command and settled when it ends (see
+## settle!). A driver that is gone is `DriverIoFailed`, from read_chunk!.
+receive_message! = |read_chunk!, pending| {
+	var $bytes = pending
+	while $bytes.len() < 4 {
+		$bytes = $bytes.concat(read_chunk!({})?)
 	}
+	length = decode_u32_le($bytes.take_first(4)).to_u64()
+	while $bytes.len() < 4 + length {
+		$bytes = $bytes.concat(read_chunk!({})?)
+	}
+	Ok({ message: $bytes.take_first(4 + length).drop_first(4), rest: $bytes.drop_first(4 + length) })
 }
+
+## End a command with nothing left over. The bytes read past its reply are
+## read on to the end of the message they stop in, and every message among
+## them is handled as the read loop would have: a held request is answered
+## from `link`'s routes, everything else is skipped. A `Request` or `Route`
+## announced without its `route` event yet is read on to that event, which
+## the driver emits in the same synchronous step (see Intercepted), so the
+## next command never meets a route it was not told about.
+settle! = |link, pending, intercepted, announced|
+	if pending.is_empty() and !announced {
+		Ok({})
+	} else {
+		{ message, rest } = receive_message!(link.read_chunk!, pending)?
+		next = answer_route!(link, message, intercepted)?
+		settle!(link, rest, next, still_announced(message, announced))
+	}
+
+## Whether a held request is announced but not yet routed after `message`.
+still_announced : List(U8), Bool -> Bool
+still_announced = |message, announced|
+	match decode_event(message) {
+		Err(_) => announced
+		Ok(event) =>
+			if event.method == Ok("route") {
+				Bool.False
+			} else if event.method == Ok("__create__") {
+				match event.params {
+					Ok(params) => announced or params.type == Ok("Request") or params.type == Ok("Route")
+					Err(_) => announced
+				}
+			} else {
+				announced
+			}
+	}
 
 decode_create_message : List(U8) -> Try(CreateMessage, [DecodeError])
 decode_create_message = |bytes| decode_json(bytes)
@@ -3587,7 +3635,7 @@ decode_json = |bytes|
 		Err(_) => Err(DecodeError)
 	}
 
-initialize_browser! = |write_child!, read_child!, close_child!, browser_type, headless, timeout, args| {
+initialize_browser! = |write_child!, read_chunk!, close_child!, browser_type, headless, timeout, args| {
 	# Send initial message to initialize the connection
 	init_msg : InitializeMessage
 	init_msg = { id: 1, guid: "", method: "initialize", params: { sdkLanguage: "javascript" }, metadata: {} }
@@ -3595,7 +3643,7 @@ initialize_browser! = |write_child!, read_child!, close_child!, browser_type, he
 
 	# Read initialization responses until we get the id:1 response
 	browser_type_name = browser_type_to_name(browser_type)
-	browser_type_guid = read_init_and_find_browser_type!(read_child!, browser_type_name)?
+	{ guid: browser_type_guid, rest: after_init } = read_init_and_find_browser_type!(read_chunk!, browser_type_name)?
 
 	# Now launch the browser.
 	# Always use 30s for browser launch (matching Playwright's default).
@@ -3619,26 +3667,26 @@ initialize_browser! = |write_child!, read_child!, close_child!, browser_type, he
 	send_message!(write_child!, launch_bytes)?
 
 	# Read browser creation response
-	browser_guid = read_until_browser_guid!(read_child!)?
+	{ guid: browser_guid, rest: after_browser } = read_until_browser_guid!(read_chunk!, after_init)?
 
 	# Read the launch response (id:2)
-	_launch_response = read_until_response!({ read_child!, write_child!, routes: [], frame_guid: "" }, 2)?
+	_launch_response = read_until_response!({ read_chunk!, write_child!, routes: [], frame_guid: "", pending: after_browser }, 2)?
 
 	# The child-bound closures are punned into the Browser record by name.
 	Ok(Playwright.Browser.{
 		write_stdin!: write_child!,
-		read_stdout!: read_child!,
+		read_chunk!,
 		close_child!,
 		browser_guid,
 		timeout,
 	})
 }
 
-read_init_and_find_browser_type! = |read_child!, browser_type_name|
-	read_init_loop!(read_child!, browser_type_name, "")
+read_init_and_find_browser_type! = |read_chunk!, browser_type_name|
+	read_init_loop!(read_chunk!, browser_type_name, "", [])
 
-read_init_loop! = |read_child!, browser_type_name, found_guid| {
-	bytes = receive_message_bytes!(read_child!)?
+read_init_loop! = |read_chunk!, browser_type_name, found_guid, pending| {
+	{ message: bytes, rest } = receive_message!(read_chunk!, pending)?
 
 	# Check if this is the final id:1 response
 	match decode_id_check(bytes) {
@@ -3649,20 +3697,20 @@ read_init_loop! = |read_child!, browser_type_name, found_guid| {
 					if Str.is_empty(found_guid) {
 						Err(BrowserTypeNotFound(browser_type_name))
 					} else {
-						Ok(found_guid)
+						Ok({ guid: found_guid, rest })
 					}
 
 				_ => {
 					# Not the id:1 response, check if it's a BrowserType create message
 					new_guid = extract_browser_type_guid(bytes, browser_type_name, found_guid)
-					read_init_loop!(read_child!, browser_type_name, new_guid)
+					read_init_loop!(read_chunk!, browser_type_name, new_guid, rest)
 				}
 			}
 
 		Err(_) => {
 			# Couldn't decode id, check if it's a BrowserType create message
 			new_guid = extract_browser_type_guid(bytes, browser_type_name, found_guid)
-			read_init_loop!(read_child!, browser_type_name, new_guid)
+			read_init_loop!(read_chunk!, browser_type_name, new_guid, rest)
 		}
 	}
 }
@@ -3698,8 +3746,8 @@ extract_browser_type_guid = |bytes, browser_type_name, default|
 		Err(_) => default
 	}
 
-read_until_browser_guid! = |read_child!| {
-	bytes = receive_message_bytes!(read_child!)?
+read_until_browser_guid! = |read_chunk!, pending| {
+	{ message: bytes, rest } = receive_message!(read_chunk!, pending)?
 
 	# The launch response (id:2) arriving before a Browser __create__ event
 	# means the launch failed (e.g. timeout expired). Carry the driver's own
@@ -3722,40 +3770,40 @@ read_until_browser_guid! = |read_child!| {
 		match decode_create_message(bytes) {
 			Ok(msg) =>
 				if msg.params.type == "Browser" {
-					Ok(msg.params.guid)
+					Ok({ guid: msg.params.guid, rest })
 				} else {
-					read_until_browser_guid!(read_child!)
+					read_until_browser_guid!(read_chunk!, rest)
 				}
 
-			Err(_) => read_until_browser_guid!(read_child!)
+			Err(_) => read_until_browser_guid!(read_chunk!, rest)
 		}
 	}
 }
 
 ## Skip messages until a `__create__` event for `wanted_type` arrives, then
-## return its guid.
-read_until_create_guid! = |read_child!, wanted_type| {
-	bytes = receive_message_bytes!(read_child!)?
+## return its guid and the bytes read past it, for the read that follows.
+read_until_create_guid! = |read_chunk!, wanted_type, pending| {
+	{ message: bytes, rest } = receive_message!(read_chunk!, pending)?
 
 	match decode_create_message(bytes) {
 		Ok(msg) =>
 			if msg.params.type == wanted_type {
-				Ok(msg.params.guid)
+				Ok({ guid: msg.params.guid, rest })
 			} else {
-				read_until_create_guid!(read_child!, wanted_type)
+				read_until_create_guid!(read_chunk!, wanted_type, rest)
 			}
 
-		Err(_) => read_until_create_guid!(read_child!, wanted_type)
+		Err(_) => read_until_create_guid!(read_chunk!, wanted_type, rest)
 	}
 }
 
-read_until_page_and_frame! = |read_child!|
-	read_page_frame_loop!(read_child!, "", "")
+read_until_page_and_frame! = |read_chunk!|
+	read_page_frame_loop!(read_chunk!, "", "", [])
 
-read_page_frame_loop! = |read_child!, found_page, found_frame| {
+read_page_frame_loop! = |read_chunk!, found_page, found_frame, pending| {
 	# If we have both, we're done
 	if Str.is_empty(found_page) or Str.is_empty(found_frame) {
-		bytes = receive_message_bytes!(read_child!)?
+		{ message: bytes, rest } = receive_message!(read_chunk!, pending)?
 
 		match decode_create_message(bytes) {
 			Ok(msg) => {
@@ -3773,14 +3821,14 @@ read_page_frame_loop! = |read_child!, found_page, found_frame| {
 						found_frame
 					}
 
-				read_page_frame_loop!(read_child!, new_page, new_frame)
+				read_page_frame_loop!(read_chunk!, new_page, new_frame, rest)
 			}
 
 			# Not a create message, keep reading
-			Err(_) => read_page_frame_loop!(read_child!, found_page, found_frame)
+			Err(_) => read_page_frame_loop!(read_chunk!, found_page, found_frame, rest)
 		}
 	} else {
-		Ok({ page_guid: found_page, frame_guid: found_frame })
+		Ok({ page_guid: found_page, frame_guid: found_frame, rest: pending })
 	}
 }
 
@@ -3790,20 +3838,26 @@ read_page_frame_loop! = |read_child!, found_page, found_frame| {
 ## `link` is where to read from and, for a page with routes, where to write
 ## the answers to the `route` events that arrive while waiting (see
 ## page_link). Every other message is skipped.
+##
+## A command ends here, so whatever was read past the reply is settled
+## before it returns (see settle!), starting from `link.pending`, the bytes
+## an earlier read in the same command left.
 read_until_id! = |link, expected_id, handle|
-	read_until_id_loop!(link, expected_id, handle, no_intercepted)
+	read_until_id_loop!(link, expected_id, handle, no_intercepted, link.pending)
 
-read_until_id_loop! = |link, expected_id, handle, intercepted| {
-	bytes = receive_message_bytes!(link.read_child!)?
+read_until_id_loop! = |link, expected_id, handle, intercepted, pending| {
+	{ message: bytes, rest } = receive_message!(link.read_chunk!, pending)?
 	has_expected_id = match decode_id_check(bytes) {
 		Ok(id_msg) => id_msg.id == Ok(expected_id)
 		Err(_) => Bool.False
 	}
 	if has_expected_id {
-		handle(bytes)
+		result = handle(bytes)
+		settle!(link, rest, intercepted, Bool.False)?
+		result
 	} else {
 		still_intercepted = answer_route!(link, bytes, intercepted)?
-		read_until_id_loop!(link, expected_id, handle, still_intercepted)
+		read_until_id_loop!(link, expected_id, handle, still_intercepted, rest)
 	}
 }
 
@@ -3949,20 +4003,25 @@ no_bounding_box_response = |id| {
 
 # What the read loop needs: where to read, and, for a page with routes,
 # where to write the answers, the routes to answer with, and the frame a
-# `Hold` records its held request in. Built by browser_link (no routes, so
-# no frame either) and page_link (the page's).
+# `Hold` records its held request in, plus `pending`, the bytes an earlier
+# read in the same command left (see receive_message!). Built by
+# browser_link (no routes, so no frame either) and page_link (the page's).
+# A read that follows another one in a command sets `pending` to the bytes
+# it left.
 browser_link = |browser| {
-	read_child!: browser.read_stdout!,
+	read_chunk!: browser.read_chunk!,
 	write_child!: browser.write_stdin!,
 	routes: [],
 	frame_guid: "",
+	pending: [],
 }
 
 page_link = |page| {
-	read_child!: page.context.browser.read_stdout!,
+	read_chunk!: page.context.browser.read_chunk!,
 	write_child!: page.context.browser.write_stdin!,
 	routes: page.routes,
 	frame_guid: page.frame_guid,
+	pending: [],
 }
 
 ## Install `routes` on the page and tell the driver which URLs to hold for

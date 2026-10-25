@@ -24,11 +24,12 @@ app [main!] {
 }
 
 import pf.Cmd
-import pf.Env
+import pf.Duration
 import pf.OsStr
 import pf.Sleep
 import pf.Stderr
 import pf.Stdout
+import pf.System
 
 ## What Playwright's processes say on their command lines.
 playwright_marks : List(Str)
@@ -41,7 +42,11 @@ suite_marks = playwright_marks.append("tests/server/main.mjs")
 main! : List(OsStr) => Try({}, _)
 main! = |os_args| {
     args = os_args.map(OsStr.display)
-    windows = Env.platform!().os == WINDOWS
+    windows =
+        match System.target!().os() {
+            Windows(_) => Bool.True
+            _ => Bool.False
+        }
 
     if args == ["none"] {
         assert_none!(windows)
@@ -67,12 +72,14 @@ assert_none! = |windows| {
 run_matrix! : Bool, List(Str) => Try({}, _)
 run_matrix! = |windows, browsers| {
     bin = if windows { "tests/leak/leak-bin.exe" } else { "tests/leak/leak-bin" }
-    build_code =
-        Cmd.new_str("roc")
-            .args_str(["build", "tests/leak/leak.roc", "--output=${bin}"])
-            .exec_exit_code!()?
-    if build_code != 0 {
-        return Err(BuildFailed(build_code))
+    build_status =
+        Cmd.new("roc")
+            .args(["build", "tests/leak/leak.roc", "--output=${bin}"].map(OsStr.from_str))
+            .inherit_stdio()
+            .run!()?
+            .status
+    if build_status != Exited(0) {
+        return Err(BuildFailed(Str.inspect(build_status)))
     }
 
     # A console Ctrl+C cannot be delivered to a child from a Windows CI job
@@ -99,8 +106,8 @@ scenario! = |windows, bin, browser, how| {
     baseline = pids!(windows, playwright_marks)?
 
     child =
-        Cmd.new_str(bin)
-            .args_str([browser, mode_str(how)])
+        Cmd.new(OsStr.from_str(bin))
+            .args([browser, mode_str(how)].map(OsStr.from_str))
             .stdout(Pipe)
             .stderr(Capture)
             .spawn!() ? |e| SpawnFailed(e)
@@ -130,10 +137,8 @@ scenario! = |windows, bin, browser, how| {
             }
         }
         CtrlC => {
-            # The child type does not carry a pid, so find it by its own
-            # command line. Unix only; Windows skips this scenario.
-            pid = pids!(windows, ["${bin} ${browser} hang"])?.first() ? |_| NoPidFor(name)
-            _ = Cmd.new_str("kill").args_str(["-INT", pid]).exec_exit_code!()?
+            # Unix only, Windows skips this scenario.
+            _ = Cmd.new("kill").args(["-INT", child.pid().to_str()].map(OsStr.from_str)).run!()?
             _ = child.wait!() ? |e| WaitFailed(e)
         }
         Kill => {
@@ -167,11 +172,11 @@ read_bytes! = |child, len| {
     var $read = []
     var $open = Bool.True
     while $read.len() < len and $open {
-        match child.read!(len - $read.len(), ready_timeout_ms) ? |e| ReadFailed(e) {
-            Stdout(bytes) if bytes.is_empty() => { $open = Bool.False }
-            Stdout(bytes) => { $read = $read.concat(bytes) }
-            Stderr(_) => {}
-            End => { $open = Bool.False }
+        match child.read!(Duration.millis(ready_timeout_ms)) {
+            Ok(Stdout(bytes)) => { $read = $read.concat(bytes) }
+            Ok(Stderr(_)) => {}
+            Err(EndOfInput) => { $open = Bool.False }
+            Err(e) => { return Err(ReadFailed(e)) }
         }
     }
     Ok($read)
@@ -191,7 +196,7 @@ wait_clear! = |windows, baseline, attempts| {
     if fresh.is_empty() or attempts == 0 {
         Ok(fresh)
     } else {
-        Sleep.millis!(200)
+        Sleep.millis!(200)?
         wait_clear!(windows, baseline, attempts - 1)
     }
 }
@@ -211,19 +216,18 @@ table! : Bool, List(Str) => Try(List(Str), _)
 table! = |windows, marks| {
     cmd =
         if windows {
-            Cmd.new_str("powershell").args_str([
+            Cmd.new("powershell").args([
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
                 "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)\" }",
-            ])
+            ].map(OsStr.from_str))
         } else {
-            Cmd.new_str("ps").args_str(["-eo", "pid,ppid,args"])
+            Cmd.new("ps").args(["-eo", "pid,ppid,args"].map(OsStr.from_str))
         }
     out =
-        match cmd.exec_output!() {
-            Ok(streams) => streams.stdout_utf8
-            Err(NonZeroExitCode(failure)) => failure.stdout_utf8_lossy
+        match cmd.run!() {
+            Ok(output) => output.stdout_utf8_lossy()
             Err(other) => return Err(ListingFailed(other))
         }
     Ok(

@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright exposing [assert!]
@@ -37,7 +38,7 @@ main! : List(OsStr) => Try({}, _)
 main! = |_args| {
     url = worker_url!({})
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(10000) },
     )?
 

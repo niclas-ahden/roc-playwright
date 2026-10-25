@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import pf.Stdout
@@ -44,7 +45,7 @@ main! = |_args|
             url = worker_url!({})
             # Verify headless: Bool.False is accepted by the driver (launches a visible browser)
             { browser, page } = Playwright.launch_page_with!(
-                { new: Cmd.new_str, spawn!: Cmd.spawn! },
+                { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
                 { headless: Bool.False, timeout: TimeoutMilliseconds(10000) },
             )?
 

@@ -6,22 +6,24 @@ Browser automation in Roc using Playwright. We communicate with Playwright using
 
 ```roc
 app [main!] {
-	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.28.0/AP9SGT1yrhCKcFxKcoA5tBkNCM6ibBjBxcQGMTb6krev.tar.zst",
+	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
 	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.11.1/GJz6pEptEAmK2FqGnzJQUhF9cymdiV3vwETDdCDevAZ1.tar.zst",
 }
 
 import pf.Cmd
-import pf.OsStr exposing [OsStr]
+import pf.Duration
+import pf.OsStr
 import playwright.Playwright exposing [assert!]
 
 main! : List(OsStr) => Try({}, _)
 main! = |_args| {
 	# The record wires the package to the host platform's process-spawning
-	# API, here basic-cli's Cmd module. Everything after launch goes through
-	# the returned browser and page.
+	# API, here basic-cli's own functions, passed as they are. The leashed
+	# spawn takes the driver and its browsers down with the program however it
+	# ends. Everything after launch goes through the returned browser and page.
 	{ browser, page } =
 		Playwright.launch_page!(
-			{ new: Cmd.new_str, spawn!: Cmd.spawn! },
+			{ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 			Chromium(DefaultChannel),
 		)?
 
@@ -41,7 +43,7 @@ main! = |_args| {
 
 ## Requirements
 
-- A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) (the `Cmd.spawn!`/`Cmd.Child` surface: `write!`, `read!` and `close!`, and `Cmd.pending_limit`)
+- A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) 0.30 (`Cmd.new`, `OsStr.from_str`, `Duration.millis` and `Cmd.Command.spawn_leashed!` or `Cmd.Command.spawn!` as the hooks, and the `Cmd.Command` and `Cmd.Child` methods `args`, `stdin`, `stdout`, `pending_limit`, `write_bytes!`, `read!` and `close!`)
 - Playwright installed and available in PATH (e.g., `pkgs.playwright-test` using Nix)
 
 ## Playwright version support

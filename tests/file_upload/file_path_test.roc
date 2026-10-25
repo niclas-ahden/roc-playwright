@@ -6,8 +6,10 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
+import pf.System
 import pf.Path
 import playwright.Playwright
 import url.Url
@@ -39,7 +41,11 @@ worker_url! = |{}| {
 ## change, which Playwright rejects.
 temp_path! : Str => Str
 temp_path! = |name| {
-    sep = if Env.platform!().os == WINDOWS { "\\" } else { "/" }
+    sep =
+        match System.target!().os() {
+            Windows(_) => "\\"
+            _ => "/"
+        }
     dir = Path.display(Env.temp_dir!())
     base =
         if dir.ends_with(sep) {
@@ -58,7 +64,7 @@ main! = |_args| {
 
     { browser, page } = Playwright.launch_page!(
 
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
 
         Chromium(DefaultChannel),
 

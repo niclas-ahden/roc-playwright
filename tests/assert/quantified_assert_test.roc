@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright exposing [assert!]
@@ -37,7 +38,7 @@ main! = |_args| {
     # has_count and has_texts re-check until the timeout when they fail,
     # so this test of failure paths keeps the timeout short.
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(1000) },
     )?
 

@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright
@@ -36,7 +37,7 @@ main! = |_args| {
     url = worker_url!({})
     # Launch with touch enabled
     browser = Playwright.launch_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(5000) },
     )?
     context = browser.new_context_with!({ has_touch: Bool.True })?

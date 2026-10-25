@@ -6,6 +6,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.Env
 import pf.OsStr
 import playwright.Playwright
@@ -59,7 +60,7 @@ main! = |_args| {
 test_select_all! : Str, Playwright.Modifier => Try(Bool, _)
 test_select_all! = |page_url, modifier| {
     { browser, page } = Playwright.launch_page_with!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis },
         { timeout: TimeoutMilliseconds(5000) },
     )?
     page.navigate!(page_url)?

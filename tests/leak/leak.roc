@@ -22,6 +22,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.OsStr
 import pf.Sleep
 import pf.Stdout
@@ -47,10 +48,10 @@ main! = |os_args| {
             _ => return Err(Usage("expected mode: exit|abandon|hang"))
         }
 
-    # Plain Cmd.spawn!, on purpose: the package must not need a leash from
+    # Plain Cmd.Command.spawn!, on purpose: the package must not need a leash from
     # the platform for its processes to follow the program down.
     { browser, page } = Playwright.launch_page!(
-        { new: Cmd.new_str, spawn!: Cmd.spawn! },
+        { new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn!, millis: Duration.millis },
         browser_type,
     )?
     page.navigate!("about:blank")?
@@ -68,6 +69,6 @@ main! = |os_args| {
 
 hang! : {} => Try({}, _)
 hang! = |{}| {
-    Sleep.millis!(1000)
+    Sleep.millis!(1000)?
     hang!({})
 }

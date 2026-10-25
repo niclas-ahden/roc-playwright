@@ -4,6 +4,7 @@ app [main!] {
 }
 
 import pf.Cmd
+import pf.Duration
 import pf.OsStr
 import playwright.Playwright
 
@@ -15,7 +16,7 @@ import playwright.Playwright
 # Every other test launches with the default.
 main! : List(OsStr) => Try({}, _)
 main! = |_args|
-    match Playwright.launch_page_with!({ new: Cmd.new_str, spawn!: Cmd.spawn!, driver_output_buffer_bytes: 1024 }, { timeout: TimeoutMilliseconds(10000) }) {
+    match Playwright.launch_page_with!({ new: Cmd.new, os_str: OsStr.from_str, spawn!: Cmd.Command.spawn_leashed!, millis: Duration.millis, driver_output_buffer_bytes: 1024 }, { timeout: TimeoutMilliseconds(10000) }) {
         Err(_) => Ok({})
 
         Ok(launched) => {
