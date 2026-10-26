@@ -10,7 +10,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     # Roc compiler revision, keep the `?dir=src` at the end.
-    roc-src.url = "github:roc-lang/roc/72704da992c1bc1d78a5f32d3a4588948e5d6ed1?dir=src";
+    roc-src.url = "github:roc-lang/roc/26436de4894be07d5440ea1c69903fd76362e375?dir=src";
     roc-nix = {
       url = "github:niclas-ahden/roc-nix";
       inputs.nixpkgs.follows = "nixpkgs";
