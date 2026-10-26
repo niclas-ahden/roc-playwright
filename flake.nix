@@ -44,6 +44,9 @@
           default = pkgs.mkShell {
             buildInputs = [
               roc
+              # Its version comes from the nixpkgs in flake.lock. Keep
+              # PLAYWRIGHT_VERSION in .github/scripts/setup.sh, which the CI
+              # legs outside Nix install, at the same version.
               pkgs.playwright-test
               # The test servers (tests/server/main.mjs) run on node.
               pkgs.nodejs

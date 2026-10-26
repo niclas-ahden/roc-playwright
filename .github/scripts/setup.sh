@@ -2,7 +2,8 @@
 # Install Playwright and its browsers, which every test in this repository
 # drives. Run by suite.yml's `setup`, once Roc is installed.
 #
-# Keep the version in step with the dev shell's playwright-test
+# Keep the version in step with the dev shell's playwright-test in flake.nix,
+# whose version the nixpkgs in flake.lock decides
 # (`nix develop -c playwright --version`). We talk to Playwright's private
 # driver protocol, which upstream may change in any release, so a runner and a
 # developer machine disagreeing about the version means they are testing two
