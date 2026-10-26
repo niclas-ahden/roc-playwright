@@ -9,7 +9,7 @@
 # different protocols.
 set -euo pipefail
 
-PLAYWRIGHT_VERSION=1.61.1
+PLAYWRIGHT_VERSION=1.64.1
 
 npm install -g "playwright@$PLAYWRIGHT_VERSION"
 
