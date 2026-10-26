@@ -739,11 +739,15 @@ Playwright :: [].{
 	## to the driver's pipe that failed, and carries the platform's error as
 	## text.
 	## `BrowserLaunchFailed` carries the driver's error message.
+	## `UnsupportedDriver` means the Playwright on PATH is older than 1.64, the
+	## first whose wire protocol this package speaks, and carries the driver's
+	## complaint. Upgrade Playwright, or point `driver` at a newer one.
 	LaunchError(e) : [
 		CouldNotStartDriver(Str),
 		DriverIoFailed(Str),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
+		UnsupportedDriver(Str),
 		..e,
 	]
 
@@ -754,6 +758,7 @@ Playwright :: [].{
 		DriverIoFailed(Str),
 		BrowserTypeNotFound(Str),
 		BrowserLaunchFailed(Str),
+		UnsupportedDriver(Str),
 		NewContextError(Str),
 		NewPageError(Str),
 		..e,
@@ -1071,9 +1076,7 @@ Playwright :: [].{
 	## ```
 	launch! : PlatformHooks(_, _, _, _, _), BrowserType => Try(Browser(LaunchError(e)), LaunchError(e))
 	launch! = |hooks, browser_type|
-		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
-		# bare value instead of a one-field record. Revert when fixed.
-		Playwright.launch_with!(hooks, { browser_type: browser_type })
+		Playwright.launch_with!(hooks, { browser_type, })
 
 	## Launch a browser with custom options.
 	##
@@ -1219,9 +1222,7 @@ Playwright :: [].{
 	## ```
 	launch_page! : PlatformHooks(_, _, _, _, _), BrowserType => Try({ browser : Browser(LaunchPageError(e)), page : Page(LaunchPageError(e)) }, LaunchPageError(e))
 	launch_page! = |hooks, browser_type|
-		# WORKAROUND: compiler bug. Punning `{ browser_type }` is read as the
-		# bare value instead of a one-field record. Revert when fixed.
-		Playwright.launch_page_with!(hooks, { browser_type: browser_type })
+		Playwright.launch_page_with!(hooks, { browser_type, })
 
 	## Launch a browser with custom options and create a page.
 	##
@@ -1266,9 +1267,10 @@ Playwright :: [].{
 		write_child! = browser.write_stdin!
 		read_chunk! = browser.read_chunk!
 
-		context_msg : NewContextMessage
-		context_msg = { id: msg_id, guid: browser.browser_guid, method: "newContext", params: { hasTouch: has_touch, permissions }, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(context_msg)))?
+		context_params : NewContextParams
+		context_params = { hasTouch: has_touch, permissions }
+		context_msg = encode_request(msg_id, browser.browser_guid, "newContext", context_params, NoDeadline)
+		send_message!(write_child!, context_msg)?
 
 		{ guid: context_guid, rest } = read_until_create_guid!(read_chunk!, "BrowserContext", [])?
 		response = read_until_response!({ ..browser_link(browser), pending: rest }, msg_id)?
@@ -1289,9 +1291,8 @@ Playwright :: [].{
 		browser = context.browser
 		write_child! = browser.write_stdin!
 		read_chunk! = browser.read_chunk!
-		page_msg : SimpleMessage
-		page_msg = { id: msg_id, guid: context.context_guid, method: "newPage", params: {}, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(page_msg)))?
+		page_msg = encode_request(msg_id, context.context_guid, "newPage", {}, NoDeadline)
+		send_message!(write_child!, page_msg)?
 
 		{ page_guid, frame_guid, rest } = read_until_page_and_frame!(read_chunk!)?
 		response = read_until_response!({ ..browser_link(browser), pending: rest }, msg_id)?
@@ -1424,9 +1425,10 @@ Playwright :: [].{
 	## ```
 	navigate! : Page([NavigateError(Str), ..e]), Str => Try({}, [NavigateError(Str), ..e])
 	navigate! = |page, url| {
-		goto_msg : GotoMessage
-		goto_msg = { id: msg_id, guid: page.frame_guid, method: "goto", params: { url, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(goto_msg)), |m| NavigateError(m))
+		goto_params : GotoParams
+		goto_params = { url, }
+		goto_msg = encode_request(msg_id, page.frame_guid, "goto", goto_params, page_deadline(page))
+		exec_command!(page, goto_msg, |m| NavigateError(m))
 	}
 
 	## Navigate to a URL with options.
@@ -1436,9 +1438,10 @@ Playwright :: [].{
 	## ```
 	navigate_with! : Page([NavigateError(Str), ..e]), NavigateOptions => Try({}, [NavigateError(Str), ..e])
 	navigate_with! = |page, { url, wait_until }| {
-		goto_msg : GotoWithWaitUntilMessage
-		goto_msg = { id: msg_id, guid: page.frame_guid, method: "goto", params: { url, timeout: timeout_to_ms(page.context.browser.timeout), waitUntil: wait_until_to_str(wait_until) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(goto_msg)), |m| NavigateError(m))
+		goto_params : GotoWithWaitUntilParams
+		goto_params = { url, waitUntil: wait_until_to_str(wait_until) }
+		goto_msg = encode_request(msg_id, page.frame_guid, "goto", goto_params, page_deadline(page))
+		exec_command!(page, goto_msg, |m| NavigateError(m))
 	}
 
 	## Get the page title.
@@ -1448,9 +1451,8 @@ Playwright :: [].{
 	## ```
 	get_title! : Page([TitleError(Str), TitleNotFound, UnexpectedStringResponse(Str), ..e]) => Try(Str, [TitleError(Str), TitleNotFound, UnexpectedStringResponse(Str), ..e])
 	get_title! = |page| {
-		title_msg : SimpleMessage
-		title_msg = { id: msg_id, guid: page.frame_guid, method: "title", params: {}, metadata: {} }
-		exec_string_command!(page, Str.to_utf8(Json.to_str(title_msg)), |m| TitleError(m), TitleNotFound)
+		title_msg = encode_request(msg_id, page.frame_guid, "title", {}, NoDeadline)
+		exec_string_command!(page, title_msg, |m| TitleError(m), TitleNotFound)
 	}
 
 	## Get the text content of an element.
@@ -1555,13 +1557,15 @@ Playwright :: [].{
 			match input_files {
 				Paths(paths) =>
 					if paths.is_empty() {
-						clear_msg : SetInputFilesPayloadsMessage
-						clear_msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, payloads: [], timeout }, metadata: {} }
-						Str.to_utf8(Json.to_str(clear_msg))
+						clear_params : { selector : Str, payloads : List({ name : Str, mimeType : Str, buffer : Str }) }
+						clear_params = { selector, payloads: [] }
+						clear_msg = encode_request(msg_id, page.frame_guid, "setInputFiles", clear_params, Within(timeout))
+						clear_msg
 					} else {
-						paths_msg : SetInputFilesPathsMessage
-						paths_msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, localPaths: paths, timeout }, metadata: {} }
-						Str.to_utf8(Json.to_str(paths_msg))
+						paths_params : { selector : Str, localPaths : List(Str) }
+						paths_params = { selector, localPaths: paths }
+						paths_msg = encode_request(msg_id, page.frame_guid, "setInputFiles", paths_params, Within(timeout))
+						paths_msg
 					}
 
 				Buffers(payloads) => {
@@ -1572,9 +1576,10 @@ Playwright :: [].{
 							buffer: Base64.encode(p.buffer),
 						},
 					)
-					buffers_msg : SetInputFilesPayloadsMessage
-					buffers_msg = { id: msg_id, guid: page.frame_guid, method: "setInputFiles", params: { selector, payloads: wire_payloads, timeout }, metadata: {} }
-					Str.to_utf8(Json.to_str(buffers_msg))
+					buffers_params : { selector : Str, payloads : List({ name : Str, mimeType : Str, buffer : Str }) }
+					buffers_params = { selector, payloads: wire_payloads }
+					buffers_msg = encode_request(msg_id, page.frame_guid, "setInputFiles", buffers_params, Within(timeout))
+					buffers_msg
 				}
 			}
 
@@ -1589,9 +1594,10 @@ Playwright :: [].{
 	## ```
 	key_type! : Page([KeyTypeError(Str), ..e]), Str, Str => Try({}, [KeyTypeError(Str), ..e])
 	key_type! = |page, selector, text| {
-		msg : PressSequentiallyMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "type", params: { selector, text, timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyTypeError(m))
+		params : PressSequentiallyParams
+		params = { selector, text }
+		msg = encode_request(msg_id, page.frame_guid, "type", params, page_deadline(page))
+		exec_command!(page, msg, |m| KeyTypeError(m))
 	}
 
 	## Move the mouse to the center of an element.
@@ -1629,9 +1635,10 @@ Playwright :: [].{
 	## ```
 	query_count! : Page([QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]), Str => Try(U64, [QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
 	query_count! = |page, selector| {
-		msg : SelectorOnlyMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "queryCount", params: { selector }, metadata: {} }
-		read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(msg)))?
+		params : SelectorOnlyParams
+		params = { selector, }
+		msg = encode_request(msg_id, page.frame_guid, "queryCount", params, NoDeadline)
+		read_child! = send_to_page!(page, msg)?
 
 		response = read_until_int_response!(read_child!, msg_id)?
 
@@ -1661,9 +1668,10 @@ Playwright :: [].{
 	## ```
 	mouse_move_with_steps! : Page([MouseMoveError(Str), InvalidCoordinates, ..e]), F64, F64, U64 => Try({}, [MouseMoveError(Str), InvalidCoordinates, ..e])
 	mouse_move_with_steps! = |page, x, y, steps| {
-		msg : MouseMoveMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "mouseMove", params: { x, y, steps }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str_try(msg) ? |_| InvalidCoordinates), |m| MouseMoveError(m))
+		params : MouseMoveParams
+		params = { x, y, steps }
+		msg = encode_request_try(msg_id, page.page_guid, "mouseMove", params) ? |_| InvalidCoordinates
+		exec_command!(page, msg, |m| MouseMoveError(m))
 	}
 
 	## Press the left mouse button at current position.
@@ -1673,9 +1681,10 @@ Playwright :: [].{
 	## ```
 	mouse_down! : Page([MouseDownError(Str), ..e]) => Try({}, [MouseDownError(Str), ..e])
 	mouse_down! = |page| {
-		msg : MouseButtonMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "mouseDown", params: { button: "left", clickCount: 1 }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| MouseDownError(m))
+		params : MouseButtonParams
+		params = { button: "left", clickCount: 1 }
+		msg = encode_request(msg_id, page.page_guid, "mouseDown", params, NoDeadline)
+		exec_command!(page, msg, |m| MouseDownError(m))
 	}
 
 	## Release the left mouse button at current position.
@@ -1685,9 +1694,10 @@ Playwright :: [].{
 	## ```
 	mouse_up! : Page([MouseUpError(Str), ..e]) => Try({}, [MouseUpError(Str), ..e])
 	mouse_up! = |page| {
-		msg : MouseButtonMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "mouseUp", params: { button: "left", clickCount: 1 }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| MouseUpError(m))
+		params : MouseButtonParams
+		params = { button: "left", clickCount: 1 }
+		msg = encode_request(msg_id, page.page_guid, "mouseUp", params, NoDeadline)
+		exec_command!(page, msg, |m| MouseUpError(m))
 	}
 
 	## Get the bounding box of an element. Waits for the element to be visible.
@@ -1707,9 +1717,10 @@ Playwright :: [].{
 	## ```
 	tap! : Page([TapError(Str), ..e]), Str => Try({}, [TapError(Str), ..e])
 	tap! = |page, selector| {
-		msg : SelectorMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "tap", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict: Bool.False }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| TapError(m))
+		params : SelectorParams
+		params = { selector, strict: Bool.False }
+		msg = encode_request(msg_id, page.frame_guid, "tap", params, page_deadline(page))
+		exec_command!(page, msg, |m| TapError(m))
 	}
 
 	## Tap at coordinates. Requires `has_touch: Bool.True` context.
@@ -1719,9 +1730,10 @@ Playwright :: [].{
 	## ```
 	touchscreen_tap! : Page([TouchscreenTapError(Str), InvalidCoordinates, ..e]), F64, F64 => Try({}, [TouchscreenTapError(Str), InvalidCoordinates, ..e])
 	touchscreen_tap! = |page, x, y| {
-		msg : TouchTapMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "touchscreenTap", params: { x, y }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str_try(msg) ? |_| InvalidCoordinates), |m| TouchscreenTapError(m))
+		params : TouchTapParams
+		params = { x, y }
+		msg = encode_request_try(msg_id, page.page_guid, "touchscreenTap", params) ? |_| InvalidCoordinates
+		exec_command!(page, msg, |m| TouchscreenTapError(m))
 	}
 
 	## Execute JavaScript and return the string result.
@@ -1737,19 +1749,7 @@ Playwright :: [].{
 	## ```
 	evaluate! : Page([EvaluateReturnedNull, EvaluateError(Str), DecodeError, ..e]), Str => Try(Str, [EvaluateReturnedNull, EvaluateError(Str), DecodeError, ..e])
 	evaluate! = |page, expression| {
-		msg : EvaluateMessage
-		msg = {
-			id: msg_id,
-			guid: page.frame_guid,
-			method: "evaluateExpression",
-			params: {
-				expression,
-				isFunction: Bool.False,
-				arg: { value: { v: "undefined" }, handles: [] },
-			},
-			metadata: {},
-		}
-		match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| EvaluateError(m))? {
+		match exec_nullable_string_command!(page, evaluate_bytes(msg_id, page.frame_guid, expression), |m| EvaluateError(m))? {
 			Ok(value) => Ok(value)
 			Err(ValueIsNull) => Err(EvaluateReturnedNull)
 		}
@@ -1772,9 +1772,10 @@ Playwright :: [].{
 		read_chunk! = browser.read_chunk!
 
 		# Create a CDP session
-		cdp_msg : CdpSessionMessage
-		cdp_msg = { id: msg_id, guid: context.context_guid, method: "newCDPSession", params: { page: { guid: page.page_guid } }, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
+		cdp_params : CdpSessionParams
+		cdp_params = { page: { guid: page.page_guid } }
+		cdp_msg = encode_request(msg_id, context.context_guid, "newCDPSession", cdp_params, NoDeadline)
+		send_message!(write_child!, cdp_msg)?
 
 		{ guid: cdp_session_guid, rest } = read_until_create_guid!(read_chunk!, "CDPSession", [])?
 		_cdp_response = read_until_response!({ ..page_link(page), pending: rest }, msg_id)?
@@ -1783,29 +1784,23 @@ Playwright :: [].{
 		x_distance = end_x - start_x
 		y_distance = end_y - start_y
 
-		scroll_msg : CdpScrollGestureMessage
-		scroll_msg = {
-			id: msg_id,
-			guid: cdp_session_guid,
-			method: "send",
+		scroll_params : CdpScrollGestureSendParams
+		scroll_params = {
+			method: "Input.synthesizeScrollGesture",
 			params: {
-				method: "Input.synthesizeScrollGesture",
-				params: {
-					x: start_x,
-					y: start_y,
-					xDistance: x_distance,
-					yDistance: y_distance,
-				},
+				x: start_x,
+				y: start_y,
+				xDistance: x_distance,
+				yDistance: y_distance,
 			},
-			metadata: {},
 		}
-		send_message!(write_child!, Str.to_utf8(Json.to_str_try(scroll_msg) ? |_| InvalidCoordinates))?
+		scroll_msg = encode_request_try(msg_id, cdp_session_guid, "send", scroll_params) ? |_| InvalidCoordinates
+		send_message!(write_child!, scroll_msg)?
 		_response = read_until_response!(page_link(page), msg_id)?
 
 		# Detach the CDP session
-		detach_msg : SimpleMessage
-		detach_msg = { id: msg_id, guid: cdp_session_guid, method: "detach", params: {}, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(detach_msg)))?
+		detach_msg = encode_request(msg_id, cdp_session_guid, "detach", {}, NoDeadline)
+		send_message!(write_child!, detach_msg)?
 		_detach_response = read_until_response!(page_link(page), msg_id)?
 
 		Ok({})
@@ -1832,9 +1827,10 @@ Playwright :: [].{
 		read_chunk! = browser.read_chunk!
 
 		# Create a CDP session
-		cdp_msg : CdpSessionMessage
-		cdp_msg = { id: msg_id, guid: context.context_guid, method: "newCDPSession", params: { page: { guid: page.page_guid } }, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(cdp_msg)))?
+		cdp_params : CdpSessionParams
+		cdp_params = { page: { guid: page.page_guid } }
+		cdp_msg = encode_request(msg_id, context.context_guid, "newCDPSession", cdp_params, NoDeadline)
+		send_message!(write_child!, cdp_msg)?
 
 		{ guid: cdp_session_guid, rest } = read_until_create_guid!(read_chunk!, "CDPSession", [])?
 		_cdp_response = read_until_response!({ ..page_link(page), pending: rest }, msg_id)?
@@ -1843,33 +1839,27 @@ Playwright :: [].{
 		x_distance = end_x - start_x
 		y_distance = end_y - start_y
 
-		swipe_msg : CdpSwipeGestureMessage
-		swipe_msg = {
-			id: msg_id,
-			guid: cdp_session_guid,
-			method: "send",
+		swipe_params : CdpSwipeGestureSendParams
+		swipe_params = {
+			method: "Input.synthesizeScrollGesture",
 			params: {
-				method: "Input.synthesizeScrollGesture",
-				params: {
-					x: start_x,
-					y: start_y,
-					xDistance: x_distance,
-					yDistance: y_distance,
-					gestureSourceType: "touch",
-					# A fling would keep synthesizing inertia events after the
-					# finger lifts, making assertions timing-dependent.
-					preventFling: Bool.True,
-				},
+				x: start_x,
+				y: start_y,
+				xDistance: x_distance,
+				yDistance: y_distance,
+				gestureSourceType: "touch",
+				# A fling would keep synthesizing inertia events after the
+				# finger lifts, making assertions timing-dependent.
+				preventFling: Bool.True,
 			},
-			metadata: {},
 		}
-		send_message!(write_child!, Str.to_utf8(Json.to_str_try(swipe_msg) ? |_| InvalidCoordinates))?
+		swipe_msg = encode_request_try(msg_id, cdp_session_guid, "send", swipe_params) ? |_| InvalidCoordinates
+		send_message!(write_child!, swipe_msg)?
 		_response = read_until_response!(page_link(page), msg_id)?
 
 		# Detach the CDP session
-		detach_msg : SimpleMessage
-		detach_msg = { id: msg_id, guid: cdp_session_guid, method: "detach", params: {}, metadata: {} }
-		send_message!(write_child!, Str.to_utf8(Json.to_str(detach_msg)))?
+		detach_msg = encode_request(msg_id, cdp_session_guid, "detach", {}, NoDeadline)
+		send_message!(write_child!, detach_msg)?
 		_detach_response = read_until_response!(page_link(page), msg_id)?
 
 		Ok({})
@@ -1959,9 +1949,10 @@ Playwright :: [].{
 	## ```
 	key_press! : Page([KeyPressError(Str), ..e]), Str, Key, List(Modifier) => Try({}, [KeyPressError(Str), ..e])
 	key_press! = |page, selector, key, modifiers| {
-		msg : KeyPressMessage
-		msg = { id: msg_id, guid: page.frame_guid, method: "press", params: { selector, key: key_combo_str(key, modifiers), timeout: timeout_to_ms(page.context.browser.timeout) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyPressError(m))
+		params : KeyPressParams
+		params = { selector, key: key_combo_str(key, modifiers) }
+		msg = encode_request(msg_id, page.frame_guid, "press", params, page_deadline(page))
+		exec_command!(page, msg, |m| KeyPressError(m))
 	}
 
 	## Press a key at the page level (keydown + keyup, no focus change).
@@ -1972,9 +1963,10 @@ Playwright :: [].{
 	## ```
 	key_press_targetless! : Page([KeyPressError(Str), ..e]), Key, List(Modifier) => Try({}, [KeyPressError(Str), ..e])
 	key_press_targetless! = |page, key, modifiers| {
-		msg : KeyboardKeyMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "keyboardPress", params: { key: key_combo_str(key, modifiers) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyPressError(m))
+		params : KeyboardKeyParams
+		params = { key: key_combo_str(key, modifiers) }
+		msg = encode_request(msg_id, page.page_guid, "keyboardPress", params, NoDeadline)
+		exec_command!(page, msg, |m| KeyPressError(m))
 	}
 
 	## Hold down a key at the page level. Use with [key_up_targetless!] to release.
@@ -1991,9 +1983,10 @@ Playwright :: [].{
 	## ```
 	key_down_targetless! : Page([KeyDownError(Str), ..e]), Key => Try({}, [KeyDownError(Str), ..e])
 	key_down_targetless! = |page, key| {
-		msg : KeyboardKeyMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "keyboardDown", params: { key: key_to_str(key) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyDownError(m))
+		params : KeyboardKeyParams
+		params = { key: key_to_str(key) }
+		msg = encode_request(msg_id, page.page_guid, "keyboardDown", params, NoDeadline)
+		exec_command!(page, msg, |m| KeyDownError(m))
 	}
 
 	## Release a key at the page level. Use after [key_down_targetless!].
@@ -2003,9 +1996,10 @@ Playwright :: [].{
 	## ```
 	key_up_targetless! : Page([KeyUpError(Str), ..e]), Key => Try({}, [KeyUpError(Str), ..e])
 	key_up_targetless! = |page, key| {
-		msg : KeyboardKeyMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "keyboardUp", params: { key: key_to_str(key) }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyUpError(m))
+		params : KeyboardKeyParams
+		params = { key: key_to_str(key) }
+		msg = encode_request(msg_id, page.page_guid, "keyboardUp", params, NoDeadline)
+		exec_command!(page, msg, |m| KeyUpError(m))
 	}
 
 	## Type text at the page level (keydown/keyup per char, no focus change).
@@ -2016,9 +2010,10 @@ Playwright :: [].{
 	## ```
 	key_type_targetless! : Page([KeyTypeError(Str), ..e]), Str => Try({}, [KeyTypeError(Str), ..e])
 	key_type_targetless! = |page, text| {
-		msg : KeyboardTypeMessage
-		msg = { id: msg_id, guid: page.page_guid, method: "keyboardType", params: { text }, metadata: {} }
-		exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| KeyTypeError(m))
+		params : KeyboardTypeParams
+		params = { text, }
+		msg = encode_request(msg_id, page.page_guid, "keyboardType", params, NoDeadline)
+		exec_command!(page, msg, |m| KeyTypeError(m))
 	}
 
 	## Close the browser and terminate the driver process.
@@ -2042,9 +2037,8 @@ Playwright :: [].{
 		# Failures here are deliberately dropped: if the driver is already
 		# gone there is nothing to close, and the kill below is the answer
 		# either way.
-		close_msg : SimpleMessage
-		close_msg = { id: msg_id, guid: browser.browser_guid, method: "close", params: {}, metadata: {} }
-		_ = send_message!(write_child!, Str.to_utf8(Json.to_str(close_msg)))
+		close_msg = encode_request(msg_id, browser.browser_guid, "close", {}, NoDeadline)
+		_ = send_message!(write_child!, close_msg)
 		_ = read_until_response!(browser_link(browser), msg_id)
 
 		# Then take the driver down and reap it. A program that never reaches
@@ -2406,162 +2400,50 @@ ExpectReceivedNull : { errorDetails : { received : { value : { v : Str } } } }
 
 ExpectReceivedTexts : { errorDetails : { received : { value : { a : List({ s : Str }) } } } }
 
-InitializeMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : InitializeParams,
-	metadata : {},
-}
-
 InitializeParams : {
 	sdkLanguage : Str,
 }
 
-LaunchMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : LaunchParams,
-	metadata : {},
-}
-
 LaunchParams : {
 	headless : Bool,
-	timeout : U64,
 	args : List(Str),
-}
-
-LaunchChannelMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : LaunchChannelParams,
-	metadata : {},
 }
 
 LaunchChannelParams : {
 	headless : Bool,
-	timeout : U64,
 	args : List(Str),
 	channel : Str,
 }
 
-SimpleMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : {},
-	metadata : {},
-}
-
-GotoMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : GotoParams,
-	metadata : {},
-}
-
 GotoParams : {
 	url : Str,
-	timeout : U64,
-}
-
-GotoWithWaitUntilMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : GotoWithWaitUntilParams,
-	metadata : {},
 }
 
 GotoWithWaitUntilParams : {
 	url : Str,
-	timeout : U64,
 	waitUntil : Str,
-}
-
-SelectorMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : SelectorParams,
-	metadata : {},
 }
 
 SelectorParams : {
 	selector : Str,
-	timeout : U64,
 	strict : Bool,
-}
-
-WaitForSelectorMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : WaitForSelectorParams,
-	metadata : {},
 }
 
 WaitForSelectorParams : {
 	selector : Str,
-	timeout : U64,
 	state : Str,
 	strict : Bool,
-}
-
-FillMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : FillParams,
-	metadata : {},
 }
 
 FillParams : {
 	selector : Str,
 	value : Str,
-	timeout : U64,
 	strict : Bool,
-}
-
-SetInputFilesPathsMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { selector : Str, localPaths : List(Str), timeout : U64 },
-	metadata : {},
-}
-
-SetInputFilesPayloadsMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { selector : Str, payloads : List({ name : Str, mimeType : Str, buffer : Str }), timeout : U64 },
-	metadata : {},
-}
-
-PressSequentiallyMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : PressSequentiallyParams,
-	metadata : {},
 }
 
 PressSequentiallyParams : {
 	selector : Str,
 	text : Str,
-	timeout : U64,
-}
-
-SelectorOnlyMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : SelectorOnlyParams,
-	metadata : {},
 }
 
 SelectorOnlyParams : {
@@ -2570,32 +2452,15 @@ SelectorOnlyParams : {
 
 # For the selector-only protocol methods that accept a strictness flag
 # (isVisible, querySelector). queryCount does not, and stays on
-# SelectorOnlyMessage.
-StrictSelectorMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : StrictSelectorParams,
-	metadata : {},
-}
-
+# SelectorOnlyParams.
 StrictSelectorParams : {
 	selector : Str,
 	strict : Bool,
 }
 
-GetAttributeMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : GetAttributeParams,
-	metadata : {},
-}
-
 GetAttributeParams : {
 	selector : Str,
 	name : Str,
-	timeout : U64,
 	strict : Bool,
 }
 
@@ -2615,43 +2480,17 @@ ExpectedRegexParam : {
 	regexFlags : Str,
 }
 
-ExpectRegexMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectRegexParams,
-	metadata : {},
-}
-
 ExpectRegexParams : {
 	selector : Str,
 	expression : Str,
 	expectedText : List(ExpectedRegexParam),
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectPageRegexMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectPageRegexParams,
-	metadata : {},
 }
 
 ExpectPageRegexParams : {
 	expression : Str,
 	expectedText : List(ExpectedRegexParam),
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectTextMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectTextParams,
-	metadata : {},
 }
 
 ExpectTextParams : {
@@ -2659,15 +2498,6 @@ ExpectTextParams : {
 	expression : Str,
 	expectedText : List(ExpectedTextParam),
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectAttributeMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectAttributeParams,
-	metadata : {},
 }
 
 ExpectAttributeParams : {
@@ -2676,30 +2506,12 @@ ExpectAttributeParams : {
 	expressionArg : Str,
 	expectedText : List(ExpectedTextParam),
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectStateMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectStateParams,
-	metadata : {},
 }
 
 ExpectStateParams : {
 	selector : Str,
 	expression : Str,
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectCheckedMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectCheckedParams,
-	metadata : {},
 }
 
 ExpectCheckedParams : {
@@ -2707,7 +2519,6 @@ ExpectCheckedParams : {
 	expression : Str,
 	expectedValue : ExpectCheckedValue,
 	isNot : Bool,
-	timeout : U64,
 }
 
 # The wire form of the serialized argument {checked: Bool}.
@@ -2716,43 +2527,17 @@ ExpectCheckedValue : {
 	handles : List({}),
 }
 
-ExpectCountMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectCountParams,
-	metadata : {},
-}
-
 ExpectCountParams : {
 	selector : Str,
 	expression : Str,
 	expectedNumber : U64,
 	isNot : Bool,
-	timeout : U64,
-}
-
-ExpectPageTextMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : ExpectPageTextParams,
-	metadata : {},
 }
 
 ExpectPageTextParams : {
 	expression : Str,
 	expectedText : List(ExpectedTextParam),
 	isNot : Bool,
-	timeout : U64,
-}
-
-MouseMoveMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : MouseMoveParams,
-	metadata : {},
 }
 
 MouseMoveParams : {
@@ -2761,38 +2546,14 @@ MouseMoveParams : {
 	steps : U64,
 }
 
-MouseButtonMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : MouseButtonParams,
-	metadata : {},
-}
-
 MouseButtonParams : {
 	button : Str,
 	clickCount : U64,
 }
 
-TouchTapMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : TouchTapParams,
-	metadata : {},
-}
-
 TouchTapParams : {
 	x : F64,
 	y : F64,
-}
-
-EvaluateMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : EvaluateParams,
-	metadata : {},
 }
 
 EvaluateParams : {
@@ -2810,83 +2571,26 @@ SerializedUndefined : {
 	v : Str,
 }
 
-NewContextMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : NewContextParams,
-	metadata : {},
-}
-
 NewContextParams : {
 	hasTouch : Bool,
 	permissions : List(Str),
 }
 
-KeyPressMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : KeyPressParams,
-	metadata : {},
-}
-
 KeyPressParams : {
 	selector : Str,
 	key : Str,
-	timeout : U64,
-}
-
-KeyboardKeyMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : KeyboardKeyParams,
-	metadata : {},
 }
 
 KeyboardKeyParams : {
 	key : Str,
 }
 
-KeyboardTypeMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : KeyboardTypeParams,
-	metadata : {},
-}
-
 KeyboardTypeParams : {
 	text : Str,
 }
 
-ElementSimpleMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : {},
-	metadata : {},
-}
-
-CdpSessionMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : CdpSessionParams,
-	metadata : {},
-}
-
 CdpSessionParams : {
 	page : ResponseRef,
-}
-
-CdpScrollGestureMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : CdpScrollGestureSendParams,
-	metadata : {},
 }
 
 CdpScrollGestureSendParams : {
@@ -2899,14 +2603,6 @@ CdpScrollGestureParams : {
 	y : F64,
 	yDistance : F64,
 	xDistance : F64,
-}
-
-CdpSwipeGestureMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : CdpSwipeGestureSendParams,
-	metadata : {},
 }
 
 CdpSwipeGestureSendParams : {
@@ -3061,6 +2757,54 @@ assert_timeout_ms = |page, t| match t {
 	NoTimeout => 0
 }
 
+# One request to the driver. Since Playwright 1.64 a call's deadline travels
+# in `metadata.timeout`, not in its params, and a call without one waits
+# forever. Every request goes through [encode_request], which takes the deadline as
+# an argument, so no call can leave it out by accident.
+Request(params, metadata) : {
+	id : U64,
+	guid : Str,
+	method : Str,
+	params : params,
+	metadata : metadata,
+}
+
+# `Within(ms)` gives the call a deadline, 0 meaning none, like the driver's.
+# `NoDeadline` is for the calls that never wait, which carry no timeout in
+# Playwright's own client either.
+Deadline : [Within(U64), NoDeadline]
+
+# The request, encoded for [send_message!] or an exec_*_command!.
+encode_request : U64, Str, Str, _, Deadline -> List(U8)
+encode_request = |id, guid, method, params, deadline|
+	match deadline {
+		Within(timeout) => {
+			req : Request(_, { timeout : U64 })
+			req = { id, guid, method, params, metadata: { timeout } }
+			Str.to_utf8(Json.to_str(req))
+		}
+
+		NoDeadline => {
+			req : Request(_, {})
+			req = { id, guid, method, params, metadata: {} }
+			Str.to_utf8(Json.to_str(req))
+		}
+	}
+
+# [encode_request] for a request carrying an F64, which NaN and the
+# infinities keep from encoding. None of these calls waits, so none has a
+# deadline.
+encode_request_try : U64, Str, Str, _ -> Try(List(U8), _)
+encode_request_try = |id, guid, method, params| {
+	req : Request(_, {})
+	req = { id, guid, method, params, metadata: {} }
+	Json.to_str_try(req).map_ok(Str.to_utf8)
+}
+
+# The deadline of an action on `page`: its browser's [Timeout].
+page_deadline : Playwright.Page(_) -> Deadline
+page_deadline = |page| Within(timeout_to_ms(page.context.browser.timeout))
+
 wait_until_to_str : Playwright.WaitUntil -> Str
 wait_until_to_str = |wait_until| match wait_until {
 	Load => "load"
@@ -3099,51 +2843,58 @@ channel_to_name = |channel| match channel {
 # instead of a silent action on the first.
 
 click_impl! = |page, selector, strict| {
-	msg : SelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "click", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| ClickError(m))
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "click", params, page_deadline(page))
+	exec_command!(page, msg, |m| ClickError(m))
 }
 
 fill_impl! = |page, selector, value, strict| {
-	msg : FillMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "fill", params: { selector, value, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| FillError(m))
+	params : FillParams
+	params = { selector, value, strict }
+	msg = encode_request(msg_id, page.frame_guid, "fill", params, page_deadline(page))
+	exec_command!(page, msg, |m| FillError(m))
 }
 
 hover_impl! = |page, selector, strict| {
-	msg : SelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "hover", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| HoverError(m))
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "hover", params, page_deadline(page))
+	exec_command!(page, msg, |m| HoverError(m))
 }
 
 text_content_impl! = |page, selector, strict| {
-	msg : SelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "textContent", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| TextContentError(m))? {
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "textContent", params, page_deadline(page))
+	match exec_nullable_string_command!(page, msg, |m| TextContentError(m))? {
 		Ok(value) => Ok(value)
 		Err(ValueIsNull) => Err(TextContentNotFound)
 	}
 }
 
 input_value_impl! = |page, selector, strict| {
-	msg : SelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "inputValue", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	exec_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| InputValueError(m), InputValueNotFound)
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "inputValue", params, page_deadline(page))
+	exec_string_command!(page, msg, |m| InputValueError(m), InputValueNotFound)
 }
 
 get_attribute_impl! = |page, selector, attribute_name, strict| {
-	msg : GetAttributeMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "getAttribute", params: { selector, name: attribute_name, timeout: timeout_to_ms(page.context.browser.timeout), strict }, metadata: {} }
-	match exec_nullable_string_command!(page, Str.to_utf8(Json.to_str(msg)), |m| AttributeError(m))? {
+	params : GetAttributeParams
+	params = { selector, name: attribute_name, strict }
+	msg = encode_request(msg_id, page.frame_guid, "getAttribute", params, page_deadline(page))
+	match exec_nullable_string_command!(page, msg, |m| AttributeError(m))? {
 		Ok(value) => Ok(value)
 		Err(ValueIsNull) => Err(AttributeNotFound)
 	}
 }
 
 is_visible_impl! = |page, selector, strict| {
-	msg : StrictSelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "isVisible", params: { selector, strict }, metadata: {} }
-	read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(msg)))?
+	params : StrictSelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "isVisible", params, NoDeadline)
+	read_child! = send_to_page!(page, msg)?
 
 	response = read_until_bool_response!(read_child!, msg_id)?
 
@@ -3165,9 +2916,10 @@ wait_for_impl! = |page, selector, state, strict| {
 		Detached => "detached"
 	}
 
-	msg : WaitForSelectorMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "waitForSelector", params: { selector, timeout: timeout_to_ms(page.context.browser.timeout), state: state_str, strict }, metadata: {} }
-	exec_command!(page, Str.to_utf8(Json.to_str(msg)), |m| WaitForTimeout(m))
+	params : WaitForSelectorParams
+	params = { selector, state: state_str, strict }
+	msg = encode_request(msg_id, page.frame_guid, "waitForSelector", params, page_deadline(page))
+	exec_command!(page, msg, |m| WaitForTimeout(m))
 }
 
 set_checked_impl! = |page, selector, desired, strict| {
@@ -3202,9 +2954,10 @@ bounding_box_impl! = |page, selector, strict| {
 	wait_for_impl!(page, selector, Visible, strict)?
 
 	# Query for the element to get its element handle guid
-	query_msg : StrictSelectorMessage
-	query_msg = { id: msg_id, guid: page.frame_guid, method: "querySelector", params: { selector, strict }, metadata: {} }
-	read_child! = send_to_page!(page, Str.to_utf8(Json.to_str(query_msg)))?
+	query_params : StrictSelectorParams
+	query_params = { selector, strict }
+	query_msg = encode_request(msg_id, page.frame_guid, "querySelector", query_params, NoDeadline)
+	read_child! = send_to_page!(page, query_msg)?
 
 	element_response = read_until_element_handle_response!(read_child!, msg_id)?
 
@@ -3220,9 +2973,8 @@ bounding_box_impl! = |page, selector, strict| {
 							# releases its buffer before Json.to_str reads it, and the
 							# boundingBox call segfaults under the LLVM backends.
 							element_guid = "${element_ref.guid}"
-							box_msg : ElementSimpleMessage
-							box_msg = { id: msg_id, guid: element_guid, method: "boundingBox", params: {}, metadata: {} }
-							box_read! = send_to_page!(page, Str.to_utf8(Json.to_str(box_msg)))?
+							box_msg = encode_request(msg_id, element_guid, "boundingBox", {}, NoDeadline)
+							box_read! = send_to_page!(page, box_msg)?
 
 							box_response = read_until_bounding_box_response!(box_read!, msg_id)?
 
@@ -3260,77 +3012,87 @@ bounding_box_impl! = |page, selector, strict| {
 
 expect_text_impl! = |page, t, selector, expression, want, match_substring, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectTextMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: Bool.True }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectTextParams
+	params = { selector, expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: Bool.True }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_value_impl! = |page, t, selector, want, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectTextMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.value", expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectTextParams
+	params = { selector, expression: "to.have.value", expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_texts_impl! = |page, t, selector, wants, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
 	expected = List.map(wants, |w| { string: w, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.True })
-	msg : ExpectTextMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.text.array", expectedText: expected, isNot: Bool.False, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectTextParams
+	params = { selector, expression: "to.have.text.array", expectedText: expected, isNot: Bool.False }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_attribute_impl! = |page, t, selector, attribute_name, want, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectAttributeMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.attribute.value", expressionArg: attribute_name, expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectAttributeParams
+	params = { selector, expression: "to.have.attribute.value", expressionArg: attribute_name, expectedText: [{ string: want, matchSubstring: Bool.False, normalizeWhiteSpace: Bool.False }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_state_impl! = |page, t, selector, expression, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectStateMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectStateParams
+	params = { selector, expression, isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_checked_impl! = |page, t, selector, desired, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
 	# to.be.checked reads its target state from expectedValue, which travels
 	# as a protocol-serialized {checked: Bool} object.
-	msg : ExpectCheckedMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.be.checked", expectedValue: { value: { o: [{ k: "checked", v: { b: desired } }] }, handles: [] }, isNot: Bool.False, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectCheckedParams
+	params = { selector, expression: "to.be.checked", expectedValue: { value: { o: [{ k: "checked", v: { b: desired } }] }, handles: [] }, isNot: Bool.False }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_count_impl! = |page, t, selector, want, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectCountMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression: "to.have.count", expectedNumber: want, isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectCountParams
+	params = { selector, expression: "to.have.count", expectedNumber: want, isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_regex_impl! = |page, t, selector, expression, regex_source, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectRegexMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { selector, expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectRegexParams
+	params = { selector, expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_page_regex_impl! = |page, t, expression, regex_source, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
-	msg : ExpectPageRegexMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectPageRegexParams
+	params = { expression, expectedText: [{ regexSource: regex_source, regexFlags: "" }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 expect_page_text_impl! = |page, t, expression, want, match_substring, normalize, is_not, to_msg| {
 	timeout_ms = assert_timeout_ms(page, t)
 	# Title and URL are claims about the page, so the message carries no
 	# selector: the driver reads document.title / location.href directly.
-	msg : ExpectPageTextMessage
-	msg = { id: msg_id, guid: page.frame_guid, method: "expect", params: { expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: normalize }], isNot: is_not, timeout: timeout_ms }, metadata: {} }
-	exec_expect!(page, timeout_ms, Str.to_utf8(Json.to_str(msg)), to_msg)
+	params : ExpectPageTextParams
+	params = { expression, expectedText: [{ string: want, matchSubstring: match_substring, normalizeWhiteSpace: normalize }], isNot: is_not }
+	msg = encode_request(msg_id, page.frame_guid, "expect", params, Within(timeout_ms))
+	exec_expect!(page, timeout_ms, msg, to_msg)
 }
 
 exec_expect! = |page, timeout_ms, message_bytes, to_msg| {
@@ -3637,31 +3399,34 @@ decode_json = |bytes|
 
 initialize_browser! = |write_child!, read_chunk!, close_child!, browser_type, headless, timeout, args| {
 	# Send initial message to initialize the connection
-	init_msg : InitializeMessage
-	init_msg = { id: 1, guid: "", method: "initialize", params: { sdkLanguage: "javascript" }, metadata: {} }
-	send_message!(write_child!, Str.to_utf8(Json.to_str(init_msg)))?
+	init_params : InitializeParams
+	init_params = { sdkLanguage: "javascript" }
+	init_msg = encode_request(1, "", "initialize", init_params, NoDeadline)
+	send_message!(write_child!, init_msg)?
 
 	# Read initialization responses until we get the id:1 response
 	browser_type_name = browser_type_to_name(browser_type)
 	{ guid: browser_type_guid, rest: after_init } = read_init_and_find_browser_type!(read_chunk!, browser_type_name)?
 
 	# Now launch the browser.
-	# Always use 30s for browser launch (matching Playwright's default).
-	# The user-provided timeout is for action/navigation operations only.
+	# Always give the launch 30s (matching Playwright's default). The
+	# user-provided timeout is for action/navigation operations only.
 	# The driver's protocol validator rejects `channel: null`, so an unset
 	# channel must be a structurally different message, not a null field.
 	launch_bytes =
 		match browser_type {
 			Chromium(DefaultChannel) | Firefox | WebKit => {
-				launch_msg : LaunchMessage
-				launch_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: 30000, args }, metadata: {} }
-				Str.to_utf8(Json.to_str(launch_msg))
+				launch_params : LaunchParams
+				launch_params = { headless, args }
+				launch_msg = encode_request(2, browser_type_guid, "launch", launch_params, Within(30000))
+				launch_msg
 			}
 
 			Chromium(channel) => {
-				launch_channel_msg : LaunchChannelMessage
-				launch_channel_msg = { id: 2, guid: browser_type_guid, method: "launch", params: { headless, timeout: 30000, args, channel: channel_to_name(channel) }, metadata: {} }
-				Str.to_utf8(Json.to_str(launch_channel_msg))
+				launch_channel_params : LaunchChannelParams
+				launch_channel_params = { headless, args, channel: channel_to_name(channel) }
+				launch_channel_msg = encode_request(2, browser_type_guid, "launch", launch_channel_params, Within(30000))
+				launch_channel_msg
 			}
 		}
 	send_message!(write_child!, launch_bytes)?
@@ -3765,7 +3530,13 @@ read_until_browser_guid! = |read_chunk!, pending| {
 				}
 			Err(_) => "the driver reported no error message"
 		}
-		Err(BrowserLaunchFailed(message))
+		# A driver older than 1.64 still wants the deadline in the launch's
+		# params, and its validator says so before anything else happens.
+		if message.contains("timeout: expected float") {
+			Err(UnsupportedDriver(message))
+		} else {
+			Err(BrowserLaunchFailed(message))
+		}
 	} else {
 		match decode_create_message(bytes) {
 			Ok(msg) =>
@@ -4030,15 +3801,8 @@ page_link = |page| {
 ## that arrives is for a URL at least one of these rules matches.
 set_routes! = |page, routes| {
 	routed = Page.{ context: page.context, page_guid: page.page_guid, frame_guid: page.frame_guid, routes }
-	msg : SetPatternsMessage
-	msg = {
-		id: msg_id,
-		guid: page.page_guid,
-		method: "setNetworkInterceptionPatterns",
-		params: { patterns: routes.map(|rule| { glob: rule.pattern }) },
-		metadata: {},
-	}
-	exec_command!(routed, Str.to_utf8(Json.to_str(msg)), |m| RouteError(m))?
+	msg = encode_request(msg_id, page.page_guid, "setNetworkInterceptionPatterns", { patterns: routes.map(|rule| { glob: rule.pattern }) }, NoDeadline)
+	exec_command!(routed, msg, |m| RouteError(m))?
 	Ok(routed)
 }
 
@@ -4047,38 +3811,6 @@ set_routes! = |page, routes| {
 # hands back the id it was asked for.
 route_msg_id : U64
 route_msg_id = 1001
-
-SetPatternsMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { patterns : List({ glob : Str }) },
-	metadata : {},
-}
-
-RouteFulfillMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { status : U16, headers : List({ name : Str, value : Str }), body : Str, isBase64 : Bool },
-	metadata : {},
-}
-
-RouteAbortMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { errorCode : Str },
-	metadata : {},
-}
-
-RouteContinueMessage : {
-	id : U64,
-	guid : Str,
-	method : Str,
-	params : { isFallback : Bool },
-	metadata : {},
-}
 
 # The driver's `__create__` events and the page's `route` event, decoded
 # with one shape: the fields a given event lacks come back Missing.
@@ -4233,40 +3965,33 @@ answer_bytes : Str, RouteAnswer -> List(U8)
 answer_bytes = |route_guid, answer|
 	match answer {
 		Fulfill({ status, headers, body }) => {
-			msg : RouteFulfillMessage
-			msg = { id: route_msg_id, guid: route_guid, method: "fulfill", params: { status, headers, body: Base64.encode(body), isBase64: Bool.True }, metadata: {} }
-			Str.to_utf8(Json.to_str(msg))
+			params : { status : U16, headers : List({ name : Str, value : Str }), body : Str, isBase64 : Bool }
+			params = { status, headers, body: Base64.encode(body), isBase64: Bool.True }
+			msg = encode_request(route_msg_id, route_guid, "fulfill", params, NoDeadline)
+			msg
 		}
 
 		Abort(reason) => {
-			msg : RouteAbortMessage
-			msg = { id: route_msg_id, guid: route_guid, method: "abort", params: { errorCode: abort_error_code(reason) }, metadata: {} }
-			Str.to_utf8(Json.to_str(msg))
+			params : { errorCode : Str }
+			params = { errorCode: abort_error_code(reason) }
+			msg = encode_request(route_msg_id, route_guid, "abort", params, NoDeadline)
+			msg
 		}
 
 		Continue => {
-			msg : RouteContinueMessage
-			msg = { id: route_msg_id, guid: route_guid, method: "continue", params: { isFallback: Bool.False }, metadata: {} }
-			Str.to_utf8(Json.to_str(msg))
+			params : { isFallback : Bool }
+			params = { isFallback: Bool.False }
+			msg = encode_request(route_msg_id, route_guid, "continue", params, NoDeadline)
+			msg
 		}
 	}
 
 # An `evaluateExpression` on a frame, with the given message id.
 evaluate_bytes : U64, Str, Str -> List(U8)
 evaluate_bytes = |id, frame_guid, expression| {
-	msg : EvaluateMessage
-	msg = {
-		id,
-		guid: frame_guid,
-		method: "evaluateExpression",
-		params: {
-			expression,
-			isFunction: Bool.False,
-			arg: { value: { v: "undefined" }, handles: [] },
-		},
-		metadata: {},
-	}
-	Str.to_utf8(Json.to_str(msg))
+	params : EvaluateParams
+	params = { expression, isFunction: Bool.False, arg: { value: { v: "undefined" }, handles: [] } }
+	encode_request(id, frame_guid, "evaluateExpression", params, NoDeadline)
 }
 
 # Held requests live on the page rather than in this process: a route event

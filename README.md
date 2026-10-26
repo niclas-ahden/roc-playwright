@@ -44,11 +44,13 @@ main! = |_args| {
 ## Requirements
 
 - A platform that exposes process spawning with piped stdio, like [niclas-ahden/basic-cli](https://github.com/niclas-ahden/basic-cli) 0.30 (`Cmd.new`, `OsStr.from_str`, `Duration.millis` and `Cmd.Command.spawn_leashed!` or `Cmd.Command.spawn!` as the hooks, and the `Cmd.Command` and `Cmd.Child` methods `args`, `stdin`, `stdout`, `pending_limit`, `write_bytes!`, `read!` and `close!`)
-- Playwright installed and available in PATH (e.g., `pkgs.playwright-test` using Nix)
+- Playwright, in a version the roc-playwright release you use supports, installed and available in PATH (e.g., `pkgs.playwright-test` using Nix). See [Playwright version support](#playwright-version-support)
 
 ## Playwright version support
 
-We use Playwright's internal driver protocol, which upstream treats as private and may change in any release. Each [release](https://github.com/niclas-ahden/roc-playwright/releases) names the Playwright version it was tested with in its notes. Other versions are untested and nothing checks the version at runtime.
+We use Playwright's internal driver protocol, which upstream treats as private and may change in any release. So check the [release](https://github.com/niclas-ahden/roc-playwright/releases) you're using for its Playwright compatibility: each one names the Playwright version it was tested with in its notes, and other versions are untested.
+
+Since 0.13.0, roc-playwright needs Playwright 1.64 or newer. Playwright 1.64 moved every call's timeout from the call's parameters into its metadata, so an older Playwright cannot work with it, and launching against one fails with `UnsupportedDriver` instead of hanging.
 
 ## Synchronous design
 
