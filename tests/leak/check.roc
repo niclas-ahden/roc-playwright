@@ -4,8 +4,8 @@
 ## Linux, macOS and Windows. From the repository root:
 ##
 ##     roc tests/leak/check.roc                       # every browser
-##     roc tests/leak/check.roc -- chromium webkit    # some browsers
-##     roc tests/leak/check.roc -- none               # see below
+##     roc tests/leak/check.roc chromium webkit       # some browsers
+##     roc tests/leak/check.roc none                  # see below
 ##
 ## For every browser and every way to die (clean exit, exit without close!,
 ## Ctrl+C, hard kill) it starts tests/leak/leak.roc, takes it down, and then
@@ -56,7 +56,7 @@ main! = |os_args| {
     }
 }
 
-## `roc tests/leak/check.roc -- none`
+## `roc tests/leak/check.roc none`
 assert_none! : Bool => Try({}, _)
 assert_none! = |windows| {
     alive = table!(windows, suite_marks)?

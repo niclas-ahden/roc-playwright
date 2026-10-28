@@ -24,7 +24,7 @@ main! = |os_args| {
 
     status =
         Cmd.new(OsStr.from_str("roc"))
-            .args([OsStr.from_str("tests/run.roc"), OsStr.from_str("--")].concat(os_args))
+            .args([OsStr.from_str("tests/run.roc")].concat(os_args))
             .inherit_stdio()
             .run!()?
             .status
