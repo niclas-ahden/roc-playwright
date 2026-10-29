@@ -86,6 +86,11 @@ Playwright :: [].{
 		close_child! : {} => Try({}, err),
 		browser_guid : Str,
 		timeout : Timeout,
+	}.{
+		# Playwright functions that take a Browser first, forwarded so they stay methods (roc-lang/roc#12685).
+		new_context! = |browser| Playwright.new_context!(browser)
+		new_context_with! = |browser, options| Playwright.new_context_with!(browser, options)
+		close! = |browser| Playwright.close!(browser)
 	}
 
 	## A browser context with isolated session state (cookies, storage,
@@ -94,6 +99,9 @@ Playwright :: [].{
 		browser : Browser(err),
 		context_guid : Str,
 		has_touch : Bool,
+	}.{
+		# Playwright functions that take a Context first, forwarded so they stay methods (roc-lang/roc#12685).
+		new_page! = |context| Playwright.new_page!(context)
 	}
 
 	## A page (browser tab), where automation happens. Returned by [new_page!]
@@ -106,6 +114,43 @@ Playwright :: [].{
 		## Answered while a command on this page waits for its response.
 		routes : List(RouteRule),
 	}.{
+		# Playwright functions that take a Page first, forwarded so they stay methods (roc-lang/roc#12685).
+		with_routes! = |page, rules, body!| Playwright.with_routes!(page, rules, body!)
+		release! = |page, answer| Playwright.release!(page, answer)
+		navigate! = |page, url| Playwright.navigate!(page, url)
+		navigate_with! = |page, options| Playwright.navigate_with!(page, options)
+		get_title! = |page| Playwright.get_title!(page)
+		text_content! = |page, selector| Playwright.text_content!(page, selector)
+		input_value! = |page, selector| Playwright.input_value!(page, selector)
+		get_attribute! = |page, selector, attribute_name| Playwright.get_attribute!(page, selector, attribute_name)
+		click! = |page, selector| Playwright.click!(page, selector)
+		check! = |page, selector| Playwright.check!(page, selector)
+		uncheck! = |page, selector| Playwright.uncheck!(page, selector)
+		set_checked! = |page, selector, desired| Playwright.set_checked!(page, selector, desired)
+		fill! = |page, selector, value| Playwright.fill!(page, selector, value)
+		set_input_files! = |page, selector, input_files| Playwright.set_input_files!(page, selector, input_files)
+		key_type! = |page, selector, text| Playwright.key_type!(page, selector, text)
+		hover! = |page, selector| Playwright.hover!(page, selector)
+		is_visible! = |page, selector| Playwright.is_visible!(page, selector)
+		wait_for! = |page, selector, state| Playwright.wait_for!(page, selector, state)
+		query_count! = |page, selector| Playwright.query_count!(page, selector)
+		mouse_move! = |page, x, y| Playwright.mouse_move!(page, x, y)
+		mouse_move_with_steps! = |page, x, y, steps| Playwright.mouse_move_with_steps!(page, x, y, steps)
+		mouse_down! = |page| Playwright.mouse_down!(page)
+		mouse_up! = |page| Playwright.mouse_up!(page)
+		bounding_box! = |page, selector| Playwright.bounding_box!(page, selector)
+		tap! = |page, selector| Playwright.tap!(page, selector)
+		touchscreen_tap! = |page, x, y| Playwright.touchscreen_tap!(page, x, y)
+		evaluate! = |page, expression| Playwright.evaluate!(page, expression)
+		touch_scroll! = |page, options| Playwright.touch_scroll!(page, options)
+		touch_swipe! = |page, options| Playwright.touch_swipe!(page, options)
+		touch_drag! = |page, options| Playwright.touch_drag!(page, options)
+		key_press! = |page, selector, key, modifiers| Playwright.key_press!(page, selector, key, modifiers)
+		key_press_targetless! = |page, key, modifiers| Playwright.key_press_targetless!(page, key, modifiers)
+		key_down_targetless! = |page, key| Playwright.key_down_targetless!(page, key)
+		key_up_targetless! = |page, key| Playwright.key_up_targetless!(page, key)
+		key_type_targetless! = |page, text| Playwright.key_type_targetless!(page, text)
+
 		## The one element matching `selector`, for acting on or asserting
 		## against. Lazy: nothing is sent to the driver until you use it.
 		##
@@ -258,6 +303,9 @@ Playwright :: [].{
 		selector : Str,
 		which : Which,
 	}.{
+		# Playwright functions that take an Element first, forwarded so they stay methods (roc-lang/roc#12685).
+		resolve = |el| Playwright.resolve(el)
+
 		click! : Element([ClickError(Str), ..e]) => Try({}, [ClickError(Str), ..e])
 		click! = |el| click_impl!(el.page, Playwright.resolve(el), Bool.True)
 
@@ -594,6 +642,14 @@ Playwright :: [].{
 		page : Page(err),
 		selector : Str,
 	}.{
+		# Playwright functions that take an Elements first, forwarded so they stay methods (roc-lang/roc#12685).
+		filtered_any = |els, filter, want| Playwright.filtered_any(els, filter, want)
+		filtered_none = |els, filter, want| Playwright.filtered_none(els, filter, want)
+		filtered_all = |els, counter_filter, want| Playwright.filtered_all(els, counter_filter, want)
+		value_claim = |els, quantifier, want, ok| Playwright.value_claim(els, quantifier, want, ok)
+		attr_claim = |els, quantifier, name, want, ok| Playwright.attr_claim(els, quantifier, name, want, ok)
+		collect! = |els, i, n, acc, read!| Playwright.collect!(els, i, n, acc, read!)
+
 		count! : Elements([QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(U64, [QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
 		count! = |els| Playwright.query_count!(els.page, els.selector)
 
@@ -2067,6 +2123,10 @@ Playwright :: [].{
 	## values: name one, pass it around, assert it as often as needed.
 	Claim(err) := {
 		run! : AssertTimeout => Try({}, err),
+	}.{
+		# Playwright functions that take a Claim first, forwarded so they stay methods (roc-lang/roc#12685).
+		assert! = |claim| Playwright.assert!(claim)
+		assert_with! = |claim, options| Playwright.assert_with!(claim, options)
 	}
 
 	## Where a claim's re-check deadline comes from: the page's [Timeout]
