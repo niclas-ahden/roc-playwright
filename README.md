@@ -7,7 +7,7 @@ Browser automation in Roc using Playwright. We communicate with Playwright using
 ```roc
 app [main!] {
 	pf: platform "https://github.com/niclas-ahden/basic-cli/releases/download/0.30.0/6XAUy48Jp34GANurMrMf74DtF7NdpkhnqFLHE4gHNzJy.tar.zst",
-	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.0/8iK8s82U5DKssLBGrbztTPWN7ymkroW3KtAtCLo7EnJQ.tar.zst",
+	playwright: "https://github.com/niclas-ahden/roc-playwright/releases/download/0.13.1/AWahhV9oKjtqpZNTG5mUK5i86Fy1Lwssrg6yeDG52Bvy.tar.zst",
 }
 
 import pf.Cmd
