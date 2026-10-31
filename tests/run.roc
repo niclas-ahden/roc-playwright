@@ -178,9 +178,7 @@ main! = |os_args| {
         max_workers: workers,
         worker_envs,
         before_each!: |_index| Ok({}),
-        # The limit covers compiling the test too, which Roc 0c440e5 does
-        # half again slower than 26436de (roc-lang/roc#12689).
-        per_test_timeout_ms: 240_000,
+        per_test_timeout_ms: 120_000,
         quiet: Bool.True,
         fail_fast,
     }, pattern)?
