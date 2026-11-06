@@ -119,6 +119,9 @@ Playwright :: [].{
 		release! = |page, answer| Playwright.release!(page, answer)
 		navigate! = |page, url| Playwright.navigate!(page, url)
 		navigate_with! = |page, options| Playwright.navigate_with!(page, options)
+		go_back! = |page| Playwright.go_back!(page)
+		go_forward! = |page| Playwright.go_forward!(page)
+		reload! = |page| Playwright.reload!(page)
 		get_title! = |page| Playwright.get_title!(page)
 		text_content! = |page, selector| Playwright.text_content!(page, selector)
 		input_value! = |page, selector| Playwright.input_value!(page, selector)
@@ -1487,6 +1490,35 @@ Playwright :: [].{
 		exec_command!(page, goto_msg, |m| NavigateError(m))
 	}
 
+	## Go back one page in the page's history, like the browser's Back
+	## button, and wait until the page it returns to has loaded: Playwright's
+	## `page.goBack()`, within the browser's [Timeout]. With no page to go
+	## back to, nothing happens. A new page starts at `about:blank`, which
+	## counts as one.
+	##
+	## Use it rather than `history.back()` through [evaluate!], which
+	## navigates behind Playwright's back and waits with no deadline. To
+	## check where the page went, assert its URL, which waits for it:
+	##
+	## ```
+	## page.go_back!()?
+	## assert!(page.url_contains("/orders"))?
+	## ```
+	go_back! : Page([NavigateError(Str), ..e]) => Try({}, [NavigateError(Str), ..e])
+	go_back! = |page| history_step!(page, "goBack")
+
+	## Go forward one page in the page's history, like the browser's
+	## Forward button, and wait until that page has loaded: Playwright's
+	## `page.goForward()`, within the browser's [Timeout]. With no page to
+	## go forward to, nothing happens.
+	go_forward! : Page([NavigateError(Str), ..e]) => Try({}, [NavigateError(Str), ..e])
+	go_forward! = |page| history_step!(page, "goForward")
+
+	## Load the page again and wait until it has loaded: Playwright's
+	## `page.reload()`, within the browser's [Timeout].
+	reload! : Page([NavigateError(Str), ..e]) => Try({}, [NavigateError(Str), ..e])
+	reload! = |page| history_step!(page, "reload")
+
 	## Navigate to a URL with options.
 	##
 	## ```
@@ -1793,6 +1825,12 @@ Playwright :: [].{
 	}
 
 	## Execute JavaScript and return the string result.
+	##
+	## Playwright gives an evaluation no deadline, so it waits as long as the
+	## page takes to answer, and one sent while the page is between two
+	## documents can wait forever. Read the page with it once a wait or an
+	## assert says the page is there, and never navigate with it: use
+	## [navigate!], [go_back!], [go_forward!] or [reload!].
 	##
 	## ```
 	## title = Playwright.evaluate!(page, "document.title")?
@@ -2862,6 +2900,16 @@ encode_request_try = |id, guid, method, params| {
 }
 
 # The deadline of an action on `page`: its browser's [Timeout].
+## Send one of the page's history commands, `goBack`, `goForward` or
+## `reload`, and wait for the load event of the page it lands on, within
+## the browser's timeout.
+history_step! : Playwright.Page([NavigateError(Str), ..e]), Str => Try({}, [NavigateError(Str), ..e])
+history_step! = |page, method| {
+	params : { waitUntil : Str }
+	params = { waitUntil: wait_until_to_str(Load) }
+	exec_command!(page, encode_request(msg_id, page.page_guid, method, params, page_deadline(page)), |m| NavigateError(m))
+}
+
 page_deadline : Playwright.Page(_) -> Deadline
 page_deadline = |page| Within(timeout_to_ms(page.context.browser.timeout))
 
