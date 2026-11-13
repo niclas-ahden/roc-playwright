@@ -148,6 +148,7 @@ Playwright :: [].{
 		touch_scroll! = |page, options| Playwright.touch_scroll!(page, options)
 		touch_swipe! = |page, options| Playwright.touch_swipe!(page, options)
 		touch_drag! = |page, options| Playwright.touch_drag!(page, options)
+		add_virtual_authenticator! = |page| Playwright.add_virtual_authenticator!(page)
 		key_press! = |page, selector, key, modifiers| Playwright.key_press!(page, selector, key, modifiers)
 		key_press_targetless! = |page, key, modifiers| Playwright.key_press_targetless!(page, key, modifiers)
 		key_down_targetless! = |page, key| Playwright.key_down_targetless!(page, key)
@@ -908,6 +909,27 @@ Playwright :: [].{
 		start_y : F64,
 		end_x : F64,
 		end_y : F64,
+	}
+
+	## A virtual WebAuthn authenticator on a page, from [add_virtual_authenticator!].
+	VirtualAuthenticator(err) := {
+		page : Page(err),
+		session_guid : Str,
+		authenticator_id : Str,
+	}.{
+		credentials! = |authenticator| Playwright.virtual_credentials!(authenticator)
+		remove! = |authenticator| Playwright.remove_virtual_authenticator!(authenticator)
+	}
+
+	## A passkey a virtual authenticator holds. The id and the user handle are
+	## base64, as CDP gives them. `rp_id` and `user_handle` are empty when CDP
+	## leaves them out.
+	VirtualCredential : {
+		credential_id : Str,
+		rp_id : Str,
+		user_handle : Str,
+		is_resident : Bool,
+		sign_count : U32,
 	}
 
 	## Which browser engine to use. `Chromium` carries the [Channel] picking
@@ -1900,6 +1922,118 @@ Playwright :: [].{
 		Ok({})
 	}
 
+	## Give the page a virtual WebAuthn authenticator, through CDP's
+	## `WebAuthn` domain (Chromium only): a platform authenticator with
+	## resident keys that verifies its user, as Face ID or Touch ID does, and
+	## answers every request at once, without a prompt. Passkeys the page
+	## saves go to it, and the page signs in with them. It lives until
+	## [remove_virtual_authenticator!] or the page closes.
+	##
+	## ```
+	## authenticator = page.add_virtual_authenticator!()?
+	## # ... the page saves a passkey ...
+	## credentials = authenticator.credentials!()?
+	## ```
+	add_virtual_authenticator! : Page([VirtualAuthenticatorFailed(Str), ..e]) => Try(VirtualAuthenticator([VirtualAuthenticatorFailed(Str), ..e]), [VirtualAuthenticatorFailed(Str), ..e])
+	add_virtual_authenticator! = |page| {
+		context = page.context
+		browser = context.browser
+		write_child! = browser.write_stdin!
+		read_chunk! = browser.read_chunk!
+
+		cdp_params : CdpSessionParams
+		cdp_params = { page: { guid: page.page_guid } }
+		send_message!(write_child!, encode_request(msg_id, context.context_guid, "newCDPSession", cdp_params, NoDeadline))?
+		{ guid: session_guid, rest } = read_until_create_guid!(read_chunk!, "CDPSession", [])?
+		_cdp_response = read_until_response!({ ..page_link(page), pending: rest }, msg_id)?
+
+		enable : CdpSend({ enableUI : Bool })
+		enable = { method: "WebAuthn.enable", params: { enableUI: Bool.False } }
+		send_message!(write_child!, encode_request(msg_id, session_guid, "send", enable, NoDeadline))?
+		read_until_id!(page_link(page), msg_id, |bytes| cdp_result(bytes, |_| Ok({})))?
+
+		add : CdpSend({ options : CdpAuthenticatorOptions })
+		add = {
+			method: "WebAuthn.addVirtualAuthenticator",
+			params: {
+				options: {
+					protocol: "ctap2",
+					transport: "internal",
+					hasResidentKey: Bool.True,
+					hasUserVerification: Bool.True,
+					isUserVerified: Bool.True,
+					automaticPresenceSimulation: Bool.True,
+				},
+			},
+		}
+		send_message!(write_child!, encode_request(msg_id, session_guid, "send", add, NoDeadline))?
+		authenticator_id = read_until_id!(
+			page_link(page),
+			msg_id,
+			|bytes|
+				cdp_result(
+					bytes,
+					|result_bytes| {
+						added : Try(CdpAddedAuthenticator, [DecodeError])
+						added = decode_json(result_bytes)
+						added.map_ok(|a| a.result.result.authenticatorId)
+					},
+				),
+		)?
+
+		Ok(VirtualAuthenticator.{ page, session_guid, authenticator_id })
+	}
+
+	## The passkeys a virtual authenticator holds, in the order it made them.
+	virtual_credentials! : VirtualAuthenticator([VirtualAuthenticatorFailed(Str), ..e]) => Try(List(VirtualCredential), [VirtualAuthenticatorFailed(Str), ..e])
+	virtual_credentials! = |authenticator| {
+		page = authenticator.page
+		get : CdpSend({ authenticatorId : Str })
+		get = { method: "WebAuthn.getCredentials", params: { authenticatorId: authenticator.authenticator_id } }
+		send_message!(page.context.browser.write_stdin!, encode_request(msg_id, authenticator.session_guid, "send", get, NoDeadline))?
+		read_until_id!(
+			page_link(page),
+			msg_id,
+			|bytes|
+				cdp_result(
+					bytes,
+					|result_bytes| {
+						got : Try(CdpCredentials, [DecodeError])
+						got = decode_json(result_bytes)
+						got.map_ok(
+							|g|
+								g.result.result.credentials.map(
+									|c| {
+										credential_id: c.credentialId,
+										rp_id: c.rpId ?? "",
+										user_handle: c.userHandle ?? "",
+										is_resident: c.isResidentCredential,
+										sign_count: c.signCount,
+									},
+								),
+						)
+					},
+				),
+		)
+	}
+
+	## Remove a virtual authenticator, with its passkeys, and close its CDP
+	## session.
+	remove_virtual_authenticator! : VirtualAuthenticator([VirtualAuthenticatorFailed(Str), ..e]) => Try({}, [VirtualAuthenticatorFailed(Str), ..e])
+	remove_virtual_authenticator! = |authenticator| {
+		page = authenticator.page
+		write_child! = page.context.browser.write_stdin!
+		remove : CdpSend({ authenticatorId : Str })
+		remove = { method: "WebAuthn.removeVirtualAuthenticator", params: { authenticatorId: authenticator.authenticator_id } }
+		send_message!(write_child!, encode_request(msg_id, authenticator.session_guid, "send", remove, NoDeadline))?
+		read_until_id!(page_link(page), msg_id, |bytes| cdp_result(bytes, |_| Ok({})))?
+
+		detach_msg = encode_request(msg_id, authenticator.session_guid, "detach", {}, NoDeadline)
+		send_message!(write_child!, detach_msg)?
+		_detach_response = read_until_response!(page_link(page), msg_id)?
+		Ok({})
+	}
+
 	## Swipe from one point to another with a real compositor-level touch
 	## gesture (CDP `Input.synthesizeScrollGesture` with `gestureSourceType:
 	## "touch"`). Unlike [touch_scroll!] (whose "default" source is a mouse
@@ -2689,6 +2823,52 @@ KeyboardTypeParams : {
 
 CdpSessionParams : {
 	page : ResponseRef,
+}
+
+## A CDP command, sent through a CDPSession's `send`.
+CdpSend(params) : {
+	method : Str,
+	params : params,
+}
+
+CdpAuthenticatorOptions : {
+	protocol : Str,
+	transport : Str,
+	hasResidentKey : Bool,
+	hasUserVerification : Bool,
+	isUserVerified : Bool,
+	automaticPresenceSimulation : Bool,
+}
+
+CdpAddedAuthenticator : {
+	result : { result : { authenticatorId : Str } },
+}
+
+CdpCredentials : {
+	result : { result : { credentials : List(CdpCredential) } },
+}
+
+CdpCredential : {
+	credentialId : Str,
+	isResidentCredential : Bool,
+	rpId : Try(Str, [Missing]),
+	userHandle : Try(Str, [Missing]),
+	signCount : U32,
+}
+
+CdpErrorCheck : {
+	error : Try(ResponseError, [Missing]),
+}
+
+## The result of a CDP reply, read by `decode`, or the driver's error.
+cdp_result : List(U8), (List(U8) -> Try(a, [DecodeError])) -> Try(a, [VirtualAuthenticatorFailed(Str)])
+cdp_result = |bytes, decode| {
+	check : Try(CdpErrorCheck, [DecodeError])
+	check = decode_json(bytes)
+	match check {
+		Ok({ error: Ok(failure) }) => Err(VirtualAuthenticatorFailed(failure.error.message))
+		_ => decode(bytes).map_err(|_| VirtualAuthenticatorFailed(raw_message(bytes)))
+	}
 }
 
 CdpScrollGestureSendParams : {
