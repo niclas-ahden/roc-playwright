@@ -80,221 +80,15 @@ Playwright :: [].{
 	## call downstream is unary. `read_chunk!` returns the next chunk of the
 	## driver's output, however much has arrived. `err` is the platform's I/O
 	## error type.
-	Browser(err) := {
-		write_stdin! : List(U8) => Try({}, err),
-		read_chunk! : {} => Try(List(U8), err),
-		close_child! : {} => Try({}, err),
-		browser_guid : Str,
-		timeout : Timeout,
-	}.{
-		# Playwright functions that take a Browser first, forwarded so they stay methods (roc-lang/roc#12685).
-		new_context! = |browser| Playwright.new_context!(browser)
-		new_context_with! = |browser, options| Playwright.new_context_with!(browser, options)
-		close! = |browser| Playwright.close!(browser)
-	}
+	Browser(err) : PlaywrightBrowser(err)
 
 	## A browser context with isolated session state (cookies, storage,
 	## permissions). Returned by [new_context!].
-	Context(err) := {
-		browser : Browser(err),
-		context_guid : Str,
-		has_touch : Bool,
-	}.{
-		# Playwright functions that take a Context first, forwarded so they stay methods (roc-lang/roc#12685).
-		new_page! = |context| Playwright.new_page!(context)
-	}
+	Context(err) : PlaywrightContext(err)
 
 	## A page (browser tab), where automation happens. Returned by [new_page!]
 	## or [launch_page!]. Almost every function in this module takes one.
-	Page(err) := {
-		context : Context(err),
-		page_guid : Str,
-		frame_guid : Str,
-		## The request rules in force, innermost [with_routes!] block first.
-		## Answered while a command on this page waits for its response.
-		routes : List(RouteRule),
-	}.{
-		# Playwright functions that take a Page first, forwarded so they stay methods (roc-lang/roc#12685).
-		with_routes! = |page, rules, body!| Playwright.with_routes!(page, rules, body!)
-		release! = |page, answer| Playwright.release!(page, answer)
-		navigate! = |page, url| Playwright.navigate!(page, url)
-		navigate_with! = |page, options| Playwright.navigate_with!(page, options)
-		go_back! = |page| Playwright.go_back!(page)
-		go_forward! = |page| Playwright.go_forward!(page)
-		reload! = |page| Playwright.reload!(page)
-		get_title! = |page| Playwright.get_title!(page)
-		text_content! = |page, selector| Playwright.text_content!(page, selector)
-		input_value! = |page, selector| Playwright.input_value!(page, selector)
-		get_attribute! = |page, selector, attribute_name| Playwright.get_attribute!(page, selector, attribute_name)
-		click! = |page, selector| Playwright.click!(page, selector)
-		check! = |page, selector| Playwright.check!(page, selector)
-		uncheck! = |page, selector| Playwright.uncheck!(page, selector)
-		set_checked! = |page, selector, desired| Playwright.set_checked!(page, selector, desired)
-		fill! = |page, selector, value| Playwright.fill!(page, selector, value)
-		set_input_files! = |page, selector, input_files| Playwright.set_input_files!(page, selector, input_files)
-		key_type! = |page, selector, text| Playwright.key_type!(page, selector, text)
-		hover! = |page, selector| Playwright.hover!(page, selector)
-		is_visible! = |page, selector| Playwright.is_visible!(page, selector)
-		wait_for! = |page, selector, state| Playwright.wait_for!(page, selector, state)
-		query_count! = |page, selector| Playwright.query_count!(page, selector)
-		mouse_move! = |page, x, y| Playwright.mouse_move!(page, x, y)
-		mouse_move_with_steps! = |page, x, y, steps| Playwright.mouse_move_with_steps!(page, x, y, steps)
-		mouse_down! = |page| Playwright.mouse_down!(page)
-		mouse_up! = |page| Playwright.mouse_up!(page)
-		bounding_box! = |page, selector| Playwright.bounding_box!(page, selector)
-		tap! = |page, selector| Playwright.tap!(page, selector)
-		touchscreen_tap! = |page, x, y| Playwright.touchscreen_tap!(page, x, y)
-		evaluate! = |page, expression| Playwright.evaluate!(page, expression)
-		touch_scroll! = |page, options| Playwright.touch_scroll!(page, options)
-		touch_swipe! = |page, options| Playwright.touch_swipe!(page, options)
-		touch_drag! = |page, options| Playwright.touch_drag!(page, options)
-		add_virtual_authenticator! = |page| Playwright.add_virtual_authenticator!(page)
-		key_press! = |page, selector, key, modifiers| Playwright.key_press!(page, selector, key, modifiers)
-		key_press_targetless! = |page, key, modifiers| Playwright.key_press_targetless!(page, key, modifiers)
-		key_down_targetless! = |page, key| Playwright.key_down_targetless!(page, key)
-		key_up_targetless! = |page, key| Playwright.key_up_targetless!(page, key)
-		key_type_targetless! = |page, text| Playwright.key_type_targetless!(page, text)
-
-		## The one element matching `selector`, for acting on or asserting
-		## against. Lazy: nothing is sent to the driver until you use it.
-		##
-		## Strict, like Playwright's locators: if the selector turns out to
-		## match more than one element, actions and assertions on it fail
-		## instead of silently picking the first match. Use [Page.find_all]
-		## when several matches are expected.
-		##
-		## ```
-		## page.find("#username").fill!("alice")?
-		## assert!(page.find("h1").has_text("Welcome"))?
-		## ```
-		find : Page(err), Str -> Element(err)
-		find = |page, selector| Element.{ page, selector, which: Only }
-
-		## Every element matching `selector`, possibly none. Has no actions.
-		## Narrow to a single one with [Elements.first], [Elements.last] or
-		## [Elements.nth].
-		##
-		## ```
-		## assert!(page.find_all("nav a").has_count(5))?
-		## page.find_all("nav a").first().click!()?
-		## ```
-		find_all : Page(err), Str -> Elements(err)
-		find_all = |page, selector| Elements.{ page, selector }
-
-		## Claims about the page itself, for [assert!]. Asserting one
-		## re-checks the page until it holds or the timeout expires (the
-		## page's [Timeout], unless [assert_with!] overrides it), like the
-		## claims on [Element].
-
-		## The document title is exactly `want`, after normalizing whitespace.
-		has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		has_title = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.False, |r| match r {
-				Received(got) => "expected page title \"${want}\", got \"${got}\""
-				_ => "expected page title \"${want}\""
-			}),
-		}
-
-		not_has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_has_title = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.True, |_r|
-				"expected page title other than \"${want}\""),
-		}
-
-		## The document title contains `want` as a substring, after
-		## normalizing whitespace.
-		title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		title_contains = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.False, |r| match r {
-				Received(got) => "expected page title containing \"${want}\", got \"${got}\""
-				_ => "expected page title containing \"${want}\""
-			}),
-		}
-
-		not_title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_title_contains = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.True, |r| match r {
-				Received(got) => "expected page title not containing \"${want}\", got \"${got}\""
-				_ => "expected page title not containing \"${want}\""
-			}),
-		}
-
-		## The document title matches the regular expression, which may be
-		## found anywhere in the title: anchor with `^` and `$` to claim all
-		## of it. An invalid pattern fails immediately with `ExpectError`.
-		title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		title_matches = |page, regex| Claim.{
-			run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.False, |r| match r {
-				Received(got) => "expected page title matching /${regex}/, got \"${got}\""
-				_ => "expected page title matching /${regex}/"
-			}),
-		}
-
-		not_title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_title_matches = |page, regex| Claim.{
-			run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.True, |r| match r {
-				Received(got) => "expected page title not matching /${regex}/, got \"${got}\""
-				_ => "expected page title not matching /${regex}/"
-			}),
-		}
-
-		## The page URL is exactly `want`, as the browser reports it, so
-		## normally with a trailing slash after a bare host.
-		has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		has_url = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.False, |r| match r {
-				Received(got) => "expected page url \"${want}\", got \"${got}\""
-				_ => "expected page url \"${want}\""
-			}),
-		}
-
-		not_has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_has_url = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.True, |_r|
-				"expected page url other than \"${want}\""),
-		}
-
-		## The page URL contains `want` as a substring. The usual claim when
-		## the URL carries a generated id: `url_contains("/orders/")` accepts
-		## any order page.
-		url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		url_contains = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.False, |r| match r {
-				Received(got) => "expected page url containing \"${want}\", got \"${got}\""
-				_ => "expected page url containing \"${want}\""
-			}),
-		}
-
-		not_url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_url_contains = |page, want| Claim.{
-			run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.True, |r| match r {
-				Received(got) => "expected page url not containing \"${want}\", got \"${got}\""
-				_ => "expected page url not containing \"${want}\""
-			}),
-		}
-
-		## The page URL matches the regular expression, which may be found
-		## anywhere in the URL: anchor with `^` and `$` to claim all of it.
-		## The usual claim when the URL carries a generated id:
-		## `url_matches("/orders/\\d+")` accepts any order page but not the
-		## order index. An invalid pattern fails immediately with
-		## `ExpectError`.
-		url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		url_matches = |page, regex| Claim.{
-			run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.False, |r| match r {
-				Received(got) => "expected page url matching /${regex}/, got \"${got}\""
-				_ => "expected page url matching /${regex}/"
-			}),
-		}
-
-		not_url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
-		not_url_matches = |page, regex| Claim.{
-			run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.True, |r| match r {
-				Received(got) => "expected page url not matching /${regex}/, got \"${got}\""
-				_ => "expected page url not matching /${regex}/"
-			}),
-		}
-	}
+	Page(err) : PlaywrightPage(err)
 
 	## Which of a selector's matches an [Element] refers to. `Only` is what
 	## [Page.find] produces. `Nth` comes from [Elements.nth] and friends.
@@ -302,495 +96,11 @@ Playwright :: [].{
 
 	## A single element: a page plus the selector that finds it, resolved fresh
 	## on every call rather than held as a handle. Produced by [Page.find].
-	Element(err) := {
-		page : Page(err),
-		selector : Str,
-		which : Which,
-	}.{
-		# Playwright functions that take an Element first, forwarded so they stay methods (roc-lang/roc#12685).
-		resolve = |el| Playwright.resolve(el)
-
-		click! : Element([ClickError(Str), ..e]) => Try({}, [ClickError(Str), ..e])
-		click! = |el| click_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		fill! : Element([FillError(Str), ..e]), Str => Try({}, [FillError(Str), ..e])
-		fill! = |el, value| fill_impl!(el.page, Playwright.resolve(el), value, Bool.True)
-
-		hover! : Element([HoverError(Str), ..e]) => Try({}, [HoverError(Str), ..e])
-		hover! = |el| hover_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		check! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
-		check! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.True, Bool.True)
-
-		uncheck! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
-		uncheck! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.False, Bool.True)
-
-		text! : Element([TextContentNotFound, TextContentError(Str), DecodeError, ..e]) => Try(Str, [TextContentNotFound, TextContentError(Str), DecodeError, ..e])
-		text! = |el| text_content_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		value! : Element([InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e]) => Try(Str, [InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e])
-		value! = |el| input_value_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		attribute! : Element([AttributeNotFound, AttributeError(Str), DecodeError, ..e]), Str => Try(Str, [AttributeNotFound, AttributeError(Str), DecodeError, ..e])
-		attribute! = |el, name| get_attribute_impl!(el.page, Playwright.resolve(el), name, Bool.True)
-
-		is_visible! : Element([IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e]) => Try(Bool, [IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e])
-		is_visible! = |el| is_visible_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		wait_for! : Element([WaitForTimeout(Str), ..e]), WaitForState => Try({}, [WaitForTimeout(Str), ..e])
-		wait_for! = |el, state| wait_for_impl!(el.page, Playwright.resolve(el), state, Bool.True)
-
-		bounding_box! : Element([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]) => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
-		bounding_box! = |el| bounding_box_impl!(el.page, Playwright.resolve(el), Bool.True)
-
-		## The one descendant matching `selector`.
-		find : Element(err), Str -> Element(err)
-		find = |el, selector| Element.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}", which: Only }
-
-		## Every descendant matching `selector`.
-		find_all : Element(err), Str -> Elements(err)
-		find_all = |el, selector| Elements.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}" }
-
-		## Claims for [assert!]. Building one is pure and sends nothing to
-		## the driver; asserting it goes through the driver's own `expect`
-		## call, the same one every official Playwright client's assertions
-		## use, which re-checks the page until the claim holds or the timeout
-		## expires (the page's [Timeout], unless [assert_with!] overrides
-		## it). A claim that never holds fails with
-		## [AssertionFailed]; a selector matching more than one element is a
-		## strict mode violation and fails immediately with [ExpectError].
-		##
-		## The `not_` variants re-check until the claim stops holding, so
-		## they are how to wait for a value to change away. A missing element
-		## fails them rather than passing vacuously: claim absence with
-		## [is_hidden] instead.
-
-		## The element's text is exactly `want`. Whitespace is normalized on
-		## both sides before comparing, like Playwright's `toHaveText`.
-		has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		has_text = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected text \"${want}\", got \"${got}\""
-					_ => "${sel}: expected text \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		not_has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		not_has_text = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.True, |r| match r {
-					Received(_) => "${sel}: expected text other than \"${want}\""
-					_ => "${sel}: expected text other than \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		## The element's text contains `want` as a substring, after
-		## normalizing whitespace, like Playwright's `toContainText`.
-		contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		contains_text = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected text containing \"${want}\", got \"${got}\""
-					_ => "${sel}: expected text containing \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		not_contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		not_contains_text = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.True, |r| match r {
-					Received(got) => "${sel}: expected text not containing \"${want}\", got \"${got}\""
-					_ => "${sel}: expected text not containing \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		## The element's text matches the regular expression, which may be
-		## found anywhere in the text: anchor with `^` and `$` to claim all
-		## of it. For genuinely dynamic content, like counters or generated
-		## ids: `matches_text("Synced \\d+ seconds ago")`. Fixed text reads
-		## better through [Element.has_text] or [Element.contains_text], which
-		## take their argument literally.
-		##
-		## The text is matched raw, without the whitespace normalization
-		## [Element.has_text] applies, like the quantified text claims. An
-		## invalid pattern fails immediately with `ExpectError`.
-		matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		matches_text = |el, regex| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected text matching /${regex}/, got \"${got}\""
-					_ => "${sel}: expected text matching /${regex}/, but no element matched the selector"
-				})
-			},
-		}
-
-		not_matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		not_matches_text = |el, regex| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.True, |r| match r {
-					Received(got) => "${sel}: expected text not matching /${regex}/, got \"${got}\""
-					_ => "${sel}: expected text not matching /${regex}/, but no element matched the selector"
-				})
-			},
-		}
-
-		has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		has_value = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_value_impl!(el.page, t, sel, want, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected value \"${want}\", got \"${got}\""
-					_ => "${sel}: expected value \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		not_has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		not_has_value = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_value_impl!(el.page, t, sel, want, Bool.True, |r| match r {
-					Received(_) => "${sel}: expected value other than \"${want}\""
-					_ => "${sel}: expected value other than \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
-		has_attribute = |el, name, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_attribute_impl!(el.page, t, sel, name, want, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected ${name}=\"${want}\", got \"${got}\""
-					NullReceived => "${sel}: expected ${name}=\"${want}\", but the element has no ${name} attribute"
-					NoElement => "${sel}: expected ${name}=\"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		not_has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
-		not_has_attribute = |el, name, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_attribute_impl!(el.page, t, sel, name, want, Bool.True, |r| match r {
-					Received(_) => "${sel}: expected ${name} other than \"${want}\""
-					NullReceived => "${sel}: expected ${name} other than \"${want}\""
-					NoElement => "${sel}: expected ${name} other than \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		## The element's class list contains `want`, as a whole class name
-		## rather than a substring, so `has_class("active")` does not match
-		## `class="inactive"`. Other classes on the element are fine. `want`
-		## may name several classes separated by whitespace, and then all of
-		## them must be present, in any order, like Playwright's
-		## `toContainClass`.
-		has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		has_class = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected class \"${want}\", got class list \"${got}\""
-					_ => "${sel}: expected class \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		not_has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
-		not_has_class = |el, want| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.True, |r| match r {
-					Received(got) => "${sel}: expected class list without \"${want}\", got class list \"${got}\""
-					_ => "${sel}: expected class list without \"${want}\", but no element matched the selector"
-				})
-			},
-		}
-
-		is_visible : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_visible = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.visible", Bool.False, |r| match r {
-					Received(got) => "${sel}: expected to be visible, but it is ${got}"
-					_ => "${sel}: expected to be visible, but no element matched the selector"
-				})
-			},
-		}
-
-		## Holds when the element is not visible, including when nothing
-		## matches the selector at all, like Playwright's `toBeHidden`.
-		is_hidden : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_hidden = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.hidden", Bool.False, |r| match r {
-					Received(got) => "${sel}: expected to be hidden, but it is ${got}"
-					_ => "${sel}: expected to be hidden"
-				})
-			},
-		}
-
-		## The element exists in the DOM, visible or not, like Playwright's
-		## `toBeAttached`. [Element.is_visible] makes the stronger claim.
-		exists : Element(AssertError(e)) -> Claim(AssertError(e))
-		exists = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.attached", Bool.False, |_r|
-					"${sel}: expected a matching element, but none exists")
-			},
-		}
-
-		## No element matches the selector at all. The strictest absence
-		## claim: [Element.is_hidden] also passes on an element that is
-		## present but invisible, this one does not. Like every single-element
-		## claim, a selector matching more than one element is a strict mode
-		## violation and fails with `ExpectError` rather than `AssertionFailed`.
-		not_exists : Element(AssertError(e)) -> Claim(AssertError(e))
-		not_exists = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.detached", Bool.False, |_r|
-					"${sel}: expected no matching element, but one exists")
-			},
-		}
-
-		## The element has no content: an empty value for an input or
-		## textarea, no text (after trimming whitespace) for anything else,
-		## like Playwright's `toBeEmpty`.
-		is_empty : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_empty = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.False, |r| match r {
-					Received(_) => "${sel}: expected to be empty, but it has content"
-					_ => "${sel}: expected to be empty, but no element matched the selector"
-				})
-			},
-		}
-
-		is_not_empty : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_not_empty = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.True, |r| match r {
-					Received(_) => "${sel}: expected content, but it is empty"
-					_ => "${sel}: expected content, but no element matched the selector"
-				})
-			},
-		}
-
-		## The checkbox or radio button is checked. Fails with `ExpectError`
-		## on an element that is neither.
-		is_checked : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_checked = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_checked_impl!(el.page, t, sel, Bool.True, |r| match r {
-					Received(got) => "${sel}: expected to be checked, but it is ${got}"
-					_ => "${sel}: expected to be checked, but no element matched the selector"
-				})
-			},
-		}
-
-		is_unchecked : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_unchecked = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_checked_impl!(el.page, t, sel, Bool.False, |r| match r {
-					Received(got) => "${sel}: expected to be unchecked, but it is ${got}"
-					_ => "${sel}: expected to be unchecked, but no element matched the selector"
-				})
-			},
-		}
-
-		is_enabled : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_enabled = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.enabled", Bool.False, |r| match r {
-					Received(got) => "${sel}: expected to be enabled, but it is ${got}"
-					_ => "${sel}: expected to be enabled, but no element matched the selector"
-				})
-			},
-		}
-
-		is_disabled : Element(AssertError(e)) -> Claim(AssertError(e))
-		is_disabled = |el| Claim.{
-			run!: |t| {
-				sel = Playwright.resolve(el)
-				expect_state_impl!(el.page, t, sel, "to.be.disabled", Bool.False, |r| match r {
-					Received(got) => "${sel}: expected to be disabled, but it is ${got}"
-					_ => "${sel}: expected to be disabled, but no element matched the selector"
-				})
-			},
-		}
-	}
+	Element(err) : PlaywrightElement(err)
 
 	## Zero or more elements. Deliberately has no actions: there is no sensible
 	## meaning for clicking or filling a set. Produced by [Page.find_all].
-	Elements(err) := {
-		page : Page(err),
-		selector : Str,
-	}.{
-		# Playwright functions that take an Elements first, forwarded so they stay methods (roc-lang/roc#12685).
-		filtered_any = |els, filter, want| Playwright.filtered_any(els, filter, want)
-		filtered_none = |els, filter, want| Playwright.filtered_none(els, filter, want)
-		filtered_all = |els, counter_filter, want| Playwright.filtered_all(els, counter_filter, want)
-		value_claim = |els, quantifier, want, ok| Playwright.value_claim(els, quantifier, want, ok)
-		attr_claim = |els, quantifier, name, want, ok| Playwright.attr_claim(els, quantifier, name, want, ok)
-		collect! = |els, i, n, acc, read!| Playwright.collect!(els, i, n, acc, read!)
-
-		count! : Elements([QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(U64, [QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
-		count! = |els| Playwright.query_count!(els.page, els.selector)
-
-		## The text of every match, in document order. One round trip for the
-		## count plus one per element, so prefer [Elements.has_count]
-		## when you only care how many there are.
-		texts! : Elements([TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(List(Str), [TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
-		texts! = |els| {
-			n = els.count!()?
-			Playwright.collect!(els, 0, n, [], |el| el.text!())
-		}
-
-		## The `i`th match, counting from 0. Negative counts from the end.
-		nth : Elements(err), I64 -> Element(err)
-		nth = |els, i| Element.{ page: els.page, selector: els.selector, which: Nth(i) }
-
-		first : Elements(err) -> Element(err)
-		first = |els| els.nth(0)
-
-		last : Elements(err) -> Element(err)
-		last = |els| els.nth(-1)
-
-		## Claims about the collection as a whole, for [assert!]. These go
-		## through the driver's `expect` call and re-check the page until
-		## they hold or the timeout expires (the page's [Timeout], unless
-		## [assert_with!] overrides it), like the claims on [Element].
-
-		has_count : Elements(AssertError(e)), U64 -> Claim(AssertError(e))
-		has_count = |els, want| Claim.{
-			run!: |t| expect_count_impl!(els.page, t, els.selector, want, Bool.False, |r| match r {
-				Received(got) => "${els.selector}: expected ${want.to_str()} matches, got ${got}"
-				_ => "${els.selector}: expected ${want.to_str()} matches"
-			}),
-		}
-
-		is_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
-		is_empty = |els| els.has_count(0)
-
-		is_not_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
-		is_not_empty = |els| Claim.{
-			run!: |t| expect_count_impl!(els.page, t, els.selector, 0, Bool.True, |_r|
-				"${els.selector}: expected at least one match, got none"),
-		}
-
-		## Exactly these texts, in document order, each after normalizing
-		## whitespace. The count must match too, so this subsumes
-		## [Elements.has_count]. Playwright's `toHaveText` with an array
-		## argument means the same thing.
-		has_texts : Elements(AssertError(e)), List(Str) -> Claim(AssertError(e))
-		has_texts = |els, want| Claim.{
-			run!: |t| {
-				want_str = Str.inspect(want)
-				expect_texts_impl!(els.page, t, els.selector, want, |r| match r {
-					Received(got) => "${els.selector}: expected texts ${want_str}, got ${got}"
-					_ => "${els.selector}: expected texts ${want_str}"
-				})
-			},
-		}
-
-		## Quantified claims: the same per-element expectations as on
-		## [Element], applied across every match (`all_`), at least one
-		## (`any_`), or none of them (`none_`). Playwright has no quantified
-		## assertions, so these are this package's own addition.
-		##
-		## The text and visibility families run as retried count claims on
-		## the selector composed with a filter engine, upstream's own idiom
-		## for quantifiers, so they re-check the page like every other
-		## driver-backed claim. Text is matched raw, without normalizing
-		## whitespace, unlike [Element.has_text]. The value and attribute
-		## families read live DOM properties no selector engine can see, so
-		## they stay one-shot: the claim is judged against the matches as
-		## they are at call time, and the page should be settled first, e.g.
-		## by asserting [Elements.has_count] before one of them.
-		##
-		## An empty set fails `all_` and `any_` claims rather than passing
-		## vacuously: the usual reason a set is empty is a selector typo, and
-		## silently passing is the worst thing a test can do. `none_` claims
-		## pass on an empty set, because nothing matching is the strongest
-		## form of the claimed absence. Pair one with [Elements.is_not_empty]
-		## when the matches must exist too. The non-vacuity makes `all_` two
-		## sequential retried checks, so a claim that never holds can take up
-		## to two timeouts to fail.
-
-		all_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		all_has_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
-
-		any_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		any_has_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
-
-		none_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		none_has_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
-
-		all_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		all_contains_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
-
-		any_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		any_contains_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
-
-		none_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
-		none_contains_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
-
-		all_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
-		all_has_value = |els, want| Playwright.value_claim(els, All, "to have value \"${want}\"", |v| v == want)
-
-		any_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
-		any_has_value = |els, want| Playwright.value_claim(els, Any, "to have value \"${want}\"", |v| v == want)
-
-		none_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
-		none_has_value = |els, want| Playwright.value_claim(els, None, "to have value \"${want}\"", |v| v == want)
-
-		all_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
-		all_has_attribute = |els, name, want| Playwright.attr_claim(els, All, name, "to have ${name}=\"${want}\"", |v| v == want)
-
-		any_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
-		any_has_attribute = |els, name, want| Playwright.attr_claim(els, Any, name, "to have ${name}=\"${want}\"", |v| v == want)
-
-		none_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
-		none_has_attribute = |els, name, want| Playwright.attr_claim(els, None, name, "to have ${name}=\"${want}\"", |v| v == want)
-
-		all_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
-		all_visible = |els| Playwright.filtered_all(els, "visible=false", "to be visible")
-
-		any_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
-		any_visible = |els| Playwright.filtered_any(els, "visible=true", "to be visible")
-
-		none_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
-		none_visible = |els| Playwright.filtered_none(els, "visible=true", "to be visible")
-
-		all_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
-		all_hidden = |els| Playwright.filtered_all(els, "visible=true", "to be hidden")
-
-		any_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
-		any_hidden = |els| Playwright.filtered_any(els, "visible=false", "to be hidden")
-
-		none_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
-		none_hidden = |els| Playwright.filtered_none(els, "visible=false", "to be hidden")
-	}
+	Elements(err) : PlaywrightElements(err)
 
 	## Ways [launch!] and [launch_with!] can fail. `CouldNotStartDriver` means the
 	## driver process would not start, and carries why plus what to do about it;
@@ -2293,13 +1603,7 @@ Playwright :: [].{
 	## [Page.has_title], ...) and run by [assert!] or [assert_with!]. Building
 	## a claim is pure and sends nothing to the driver, so claims are plain
 	## values: name one, pass it around, assert it as often as needed.
-	Claim(err) := {
-		run! : AssertTimeout => Try({}, err),
-	}.{
-		# Playwright functions that take a Claim first, forwarded so they stay methods (roc-lang/roc#12685).
-		assert! = |claim| Playwright.assert!(claim)
-		assert_with! = |claim, options| Playwright.assert_with!(claim, options)
-	}
+	Claim(err) : PlaywrightClaim(err)
 
 	## Where a claim's re-check deadline comes from: the page's [Timeout]
 	## (what [assert!] uses), a per-assert override, or no limit at all.
@@ -2472,6 +1776,722 @@ Playwright :: [].{
 			Only => el.selector
 			Nth(i) => "${el.selector} >> nth=${i.to_str()}"
 		}
+}
+
+# Browser, Context, Page, Element, Elements and Claim, which `Playwright`
+# names by aliases (`Playwright.Page` is `PlaywrightPage`). They carry methods
+# named like `Playwright`'s own functions (`page.click!` and
+# `Playwright.click!`), and a method of a type nested in `Playwright` shadows
+# the function of the same name, which roc warns about since 165a1ba. Out
+# here they shadow nothing. Roc's builtins do the same with Str's problem
+# types.
+
+PlaywrightBrowser(err) := {
+	write_stdin! : List(U8) => Try({}, err),
+	read_chunk! : {} => Try(List(U8), err),
+	close_child! : {} => Try({}, err),
+	browser_guid : Str,
+	timeout : Timeout,
+}.{
+	# Playwright functions that take a Browser first, forwarded so they stay methods (roc-lang/roc#12685).
+	new_context! = |browser| Playwright.new_context!(browser)
+	new_context_with! = |browser, options| Playwright.new_context_with!(browser, options)
+	close! = |browser| Playwright.close!(browser)
+}
+
+PlaywrightContext(err) := {
+	browser : Browser(err),
+	context_guid : Str,
+	has_touch : Bool,
+}.{
+	# Playwright functions that take a Context first, forwarded so they stay methods (roc-lang/roc#12685).
+	new_page! = |context| Playwright.new_page!(context)
+}
+
+PlaywrightPage(err) := {
+	context : Context(err),
+	page_guid : Str,
+	frame_guid : Str,
+	## The request rules in force, innermost [with_routes!] block first.
+	## Answered while a command on this page waits for its response.
+	routes : List(RouteRule),
+}.{
+	# Playwright functions that take a Page first, forwarded so they stay methods (roc-lang/roc#12685).
+	with_routes! = |page, rules, body!| Playwright.with_routes!(page, rules, body!)
+	release! = |page, answer| Playwright.release!(page, answer)
+	navigate! = |page, url| Playwright.navigate!(page, url)
+	navigate_with! = |page, options| Playwright.navigate_with!(page, options)
+	go_back! = |page| Playwright.go_back!(page)
+	go_forward! = |page| Playwright.go_forward!(page)
+	reload! = |page| Playwright.reload!(page)
+	get_title! = |page| Playwright.get_title!(page)
+	text_content! = |page, selector| Playwright.text_content!(page, selector)
+	input_value! = |page, selector| Playwright.input_value!(page, selector)
+	get_attribute! = |page, selector, attribute_name| Playwright.get_attribute!(page, selector, attribute_name)
+	click! = |page, selector| Playwright.click!(page, selector)
+	check! = |page, selector| Playwright.check!(page, selector)
+	uncheck! = |page, selector| Playwright.uncheck!(page, selector)
+	set_checked! = |page, selector, desired| Playwright.set_checked!(page, selector, desired)
+	fill! = |page, selector, value| Playwright.fill!(page, selector, value)
+	set_input_files! = |page, selector, input_files| Playwright.set_input_files!(page, selector, input_files)
+	key_type! = |page, selector, text| Playwright.key_type!(page, selector, text)
+	hover! = |page, selector| Playwright.hover!(page, selector)
+	is_visible! = |page, selector| Playwright.is_visible!(page, selector)
+	wait_for! = |page, selector, state| Playwright.wait_for!(page, selector, state)
+	query_count! = |page, selector| Playwright.query_count!(page, selector)
+	mouse_move! = |page, x, y| Playwright.mouse_move!(page, x, y)
+	mouse_move_with_steps! = |page, x, y, steps| Playwright.mouse_move_with_steps!(page, x, y, steps)
+	mouse_down! = |page| Playwright.mouse_down!(page)
+	mouse_up! = |page| Playwright.mouse_up!(page)
+	bounding_box! = |page, selector| Playwright.bounding_box!(page, selector)
+	tap! = |page, selector| Playwright.tap!(page, selector)
+	touchscreen_tap! = |page, x, y| Playwright.touchscreen_tap!(page, x, y)
+	evaluate! = |page, expression| Playwright.evaluate!(page, expression)
+	touch_scroll! = |page, options| Playwright.touch_scroll!(page, options)
+	touch_swipe! = |page, options| Playwright.touch_swipe!(page, options)
+	touch_drag! = |page, options| Playwright.touch_drag!(page, options)
+	add_virtual_authenticator! = |page| Playwright.add_virtual_authenticator!(page)
+	key_press! = |page, selector, key, modifiers| Playwright.key_press!(page, selector, key, modifiers)
+	key_press_targetless! = |page, key, modifiers| Playwright.key_press_targetless!(page, key, modifiers)
+	key_down_targetless! = |page, key| Playwright.key_down_targetless!(page, key)
+	key_up_targetless! = |page, key| Playwright.key_up_targetless!(page, key)
+	key_type_targetless! = |page, text| Playwright.key_type_targetless!(page, text)
+
+	## The one element matching `selector`, for acting on or asserting
+	## against. Lazy: nothing is sent to the driver until you use it.
+	##
+	## Strict, like Playwright's locators: if the selector turns out to
+	## match more than one element, actions and assertions on it fail
+	## instead of silently picking the first match. Use [Page.find_all]
+	## when several matches are expected.
+	##
+	## ```
+	## page.find("#username").fill!("alice")?
+	## assert!(page.find("h1").has_text("Welcome"))?
+	## ```
+	find : Page(err), Str -> Element(err)
+	find = |page, selector| Element.{ page, selector, which: Only }
+
+	## Every element matching `selector`, possibly none. Has no actions.
+	## Narrow to a single one with [Elements.first], [Elements.last] or
+	## [Elements.nth].
+	##
+	## ```
+	## assert!(page.find_all("nav a").has_count(5))?
+	## page.find_all("nav a").first().click!()?
+	## ```
+	find_all : Page(err), Str -> Elements(err)
+	find_all = |page, selector| Elements.{ page, selector }
+
+	## Claims about the page itself, for [assert!]. Asserting one
+	## re-checks the page until it holds or the timeout expires (the
+	## page's [Timeout], unless [assert_with!] overrides it), like the
+	## claims on [Element].
+
+	## The document title is exactly `want`, after normalizing whitespace.
+	has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	has_title = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.False, |r| match r {
+			Received(got) => "expected page title \"${want}\", got \"${got}\""
+			_ => "expected page title \"${want}\""
+		}),
+	}
+
+	not_has_title : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_has_title = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.False, Bool.True, Bool.True, |_r|
+			"expected page title other than \"${want}\""),
+	}
+
+	## The document title contains `want` as a substring, after
+	## normalizing whitespace.
+	title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	title_contains = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.False, |r| match r {
+			Received(got) => "expected page title containing \"${want}\", got \"${got}\""
+			_ => "expected page title containing \"${want}\""
+		}),
+	}
+
+	not_title_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_title_contains = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.title", want, Bool.True, Bool.True, Bool.True, |r| match r {
+			Received(got) => "expected page title not containing \"${want}\", got \"${got}\""
+			_ => "expected page title not containing \"${want}\""
+		}),
+	}
+
+	## The document title matches the regular expression, which may be
+	## found anywhere in the title: anchor with `^` and `$` to claim all
+	## of it. An invalid pattern fails immediately with `ExpectError`.
+	title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	title_matches = |page, regex| Claim.{
+		run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.False, |r| match r {
+			Received(got) => "expected page title matching /${regex}/, got \"${got}\""
+			_ => "expected page title matching /${regex}/"
+		}),
+	}
+
+	not_title_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_title_matches = |page, regex| Claim.{
+		run!: |t| expect_page_regex_impl!(page, t, "to.have.title", regex, Bool.True, |r| match r {
+			Received(got) => "expected page title not matching /${regex}/, got \"${got}\""
+			_ => "expected page title not matching /${regex}/"
+		}),
+	}
+
+	## The page URL is exactly `want`, as the browser reports it, so
+	## normally with a trailing slash after a bare host.
+	has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	has_url = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.False, |r| match r {
+			Received(got) => "expected page url \"${want}\", got \"${got}\""
+			_ => "expected page url \"${want}\""
+		}),
+	}
+
+	not_has_url : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_has_url = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.False, Bool.False, Bool.True, |_r|
+			"expected page url other than \"${want}\""),
+	}
+
+	## The page URL contains `want` as a substring. The usual claim when
+	## the URL carries a generated id: `url_contains("/orders/")` accepts
+	## any order page.
+	url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	url_contains = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.False, |r| match r {
+			Received(got) => "expected page url containing \"${want}\", got \"${got}\""
+			_ => "expected page url containing \"${want}\""
+		}),
+	}
+
+	not_url_contains : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_url_contains = |page, want| Claim.{
+		run!: |t| expect_page_text_impl!(page, t, "to.have.url", want, Bool.True, Bool.False, Bool.True, |r| match r {
+			Received(got) => "expected page url not containing \"${want}\", got \"${got}\""
+			_ => "expected page url not containing \"${want}\""
+		}),
+	}
+
+	## The page URL matches the regular expression, which may be found
+	## anywhere in the URL: anchor with `^` and `$` to claim all of it.
+	## The usual claim when the URL carries a generated id:
+	## `url_matches("/orders/\\d+")` accepts any order page but not the
+	## order index. An invalid pattern fails immediately with
+	## `ExpectError`.
+	url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	url_matches = |page, regex| Claim.{
+		run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.False, |r| match r {
+			Received(got) => "expected page url matching /${regex}/, got \"${got}\""
+			_ => "expected page url matching /${regex}/"
+		}),
+	}
+
+	not_url_matches : Page(AssertError(e)), Str -> Claim(AssertError(e))
+	not_url_matches = |page, regex| Claim.{
+		run!: |t| expect_page_regex_impl!(page, t, "to.have.url", regex, Bool.True, |r| match r {
+			Received(got) => "expected page url not matching /${regex}/, got \"${got}\""
+			_ => "expected page url not matching /${regex}/"
+		}),
+	}
+}
+
+PlaywrightElement(err) := {
+	page : Page(err),
+	selector : Str,
+	which : Which,
+}.{
+	# Playwright functions that take an Element first, forwarded so they stay methods (roc-lang/roc#12685).
+	resolve = |el| Playwright.resolve(el)
+
+	click! : Element([ClickError(Str), ..e]) => Try({}, [ClickError(Str), ..e])
+	click! = |el| click_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	fill! : Element([FillError(Str), ..e]), Str => Try({}, [FillError(Str), ..e])
+	fill! = |el, value| fill_impl!(el.page, Playwright.resolve(el), value, Bool.True)
+
+	hover! : Element([HoverError(Str), ..e]) => Try({}, [HoverError(Str), ..e])
+	hover! = |el| hover_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	check! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
+	check! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.True, Bool.True)
+
+	uncheck! : Element([CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e]) => Try({}, [CheckError(Str), DecodeError, EvaluateReturnedNull, EvaluateError(Str), ..e])
+	uncheck! = |el| set_checked_impl!(el.page, Playwright.resolve(el), Bool.False, Bool.True)
+
+	text! : Element([TextContentNotFound, TextContentError(Str), DecodeError, ..e]) => Try(Str, [TextContentNotFound, TextContentError(Str), DecodeError, ..e])
+	text! = |el| text_content_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	value! : Element([InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e]) => Try(Str, [InputValueError(Str), InputValueNotFound, UnexpectedStringResponse(Str), ..e])
+	value! = |el| input_value_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	attribute! : Element([AttributeNotFound, AttributeError(Str), DecodeError, ..e]), Str => Try(Str, [AttributeNotFound, AttributeError(Str), DecodeError, ..e])
+	attribute! = |el, name| get_attribute_impl!(el.page, Playwright.resolve(el), name, Bool.True)
+
+	is_visible! : Element([IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e]) => Try(Bool, [IsVisibleError(Str), IsVisibleNoResult, UnexpectedBoolResponse(Str), ..e])
+	is_visible! = |el| is_visible_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	wait_for! : Element([WaitForTimeout(Str), ..e]), WaitForState => Try({}, [WaitForTimeout(Str), ..e])
+	wait_for! = |el, state| wait_for_impl!(el.page, Playwright.resolve(el), state, Bool.True)
+
+	bounding_box! : Element([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]) => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
+	bounding_box! = |el| bounding_box_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	## The one descendant matching `selector`.
+	find : Element(err), Str -> Element(err)
+	find = |el, selector| Element.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}", which: Only }
+
+	## Every descendant matching `selector`.
+	find_all : Element(err), Str -> Elements(err)
+	find_all = |el, selector| Elements.{ page: el.page, selector: "${Playwright.resolve(el)} >> ${selector}" }
+
+	## Claims for [assert!]. Building one is pure and sends nothing to
+	## the driver; asserting it goes through the driver's own `expect`
+	## call, the same one every official Playwright client's assertions
+	## use, which re-checks the page until the claim holds or the timeout
+	## expires (the page's [Timeout], unless [assert_with!] overrides
+	## it). A claim that never holds fails with
+	## [AssertionFailed]; a selector matching more than one element is a
+	## strict mode violation and fails immediately with [ExpectError].
+	##
+	## The `not_` variants re-check until the claim stops holding, so
+	## they are how to wait for a value to change away. A missing element
+	## fails them rather than passing vacuously: claim absence with
+	## [is_hidden] instead.
+
+	## The element's text is exactly `want`. Whitespace is normalized on
+	## both sides before comparing, like Playwright's `toHaveText`.
+	has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	has_text = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected text \"${want}\", got \"${got}\""
+				_ => "${sel}: expected text \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	not_has_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	not_has_text = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.False, Bool.True, |r| match r {
+				Received(_) => "${sel}: expected text other than \"${want}\""
+				_ => "${sel}: expected text other than \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	## The element's text contains `want` as a substring, after
+	## normalizing whitespace, like Playwright's `toContainText`.
+	contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	contains_text = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected text containing \"${want}\", got \"${got}\""
+				_ => "${sel}: expected text containing \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	not_contains_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	not_contains_text = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.have.text", want, Bool.True, Bool.True, |r| match r {
+				Received(got) => "${sel}: expected text not containing \"${want}\", got \"${got}\""
+				_ => "${sel}: expected text not containing \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	## The element's text matches the regular expression, which may be
+	## found anywhere in the text: anchor with `^` and `$` to claim all
+	## of it. For genuinely dynamic content, like counters or generated
+	## ids: `matches_text("Synced \\d+ seconds ago")`. Fixed text reads
+	## better through [Element.has_text] or [Element.contains_text], which
+	## take their argument literally.
+	##
+	## The text is matched raw, without the whitespace normalization
+	## [Element.has_text] applies, like the quantified text claims. An
+	## invalid pattern fails immediately with `ExpectError`.
+	matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	matches_text = |el, regex| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected text matching /${regex}/, got \"${got}\""
+				_ => "${sel}: expected text matching /${regex}/, but no element matched the selector"
+			})
+		},
+	}
+
+	not_matches_text : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	not_matches_text = |el, regex| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_regex_impl!(el.page, t, sel, "to.have.text", regex, Bool.True, |r| match r {
+				Received(got) => "${sel}: expected text not matching /${regex}/, got \"${got}\""
+				_ => "${sel}: expected text not matching /${regex}/, but no element matched the selector"
+			})
+		},
+	}
+
+	has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	has_value = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_value_impl!(el.page, t, sel, want, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected value \"${want}\", got \"${got}\""
+				_ => "${sel}: expected value \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	not_has_value : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	not_has_value = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_value_impl!(el.page, t, sel, want, Bool.True, |r| match r {
+				Received(_) => "${sel}: expected value other than \"${want}\""
+				_ => "${sel}: expected value other than \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
+	has_attribute = |el, name, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_attribute_impl!(el.page, t, sel, name, want, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected ${name}=\"${want}\", got \"${got}\""
+				NullReceived => "${sel}: expected ${name}=\"${want}\", but the element has no ${name} attribute"
+				NoElement => "${sel}: expected ${name}=\"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	not_has_attribute : Element(AssertError(e)), Str, Str -> Claim(AssertError(e))
+	not_has_attribute = |el, name, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_attribute_impl!(el.page, t, sel, name, want, Bool.True, |r| match r {
+				Received(_) => "${sel}: expected ${name} other than \"${want}\""
+				NullReceived => "${sel}: expected ${name} other than \"${want}\""
+				NoElement => "${sel}: expected ${name} other than \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	## The element's class list contains `want`, as a whole class name
+	## rather than a substring, so `has_class("active")` does not match
+	## `class="inactive"`. Other classes on the element are fine. `want`
+	## may name several classes separated by whitespace, and then all of
+	## them must be present, in any order, like Playwright's
+	## `toContainClass`.
+	has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	has_class = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected class \"${want}\", got class list \"${got}\""
+				_ => "${sel}: expected class \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	not_has_class : Element(AssertError(e)), Str -> Claim(AssertError(e))
+	not_has_class = |el, want| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_text_impl!(el.page, t, sel, "to.contain.class", want, Bool.False, Bool.True, |r| match r {
+				Received(got) => "${sel}: expected class list without \"${want}\", got class list \"${got}\""
+				_ => "${sel}: expected class list without \"${want}\", but no element matched the selector"
+			})
+		},
+	}
+
+	is_visible : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_visible = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.visible", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be visible, but it is ${got}"
+				_ => "${sel}: expected to be visible, but no element matched the selector"
+			})
+		},
+	}
+
+	## Holds when the element is not visible, including when nothing
+	## matches the selector at all, like Playwright's `toBeHidden`.
+	is_hidden : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_hidden = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.hidden", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be hidden, but it is ${got}"
+				_ => "${sel}: expected to be hidden"
+			})
+		},
+	}
+
+	## The element exists in the DOM, visible or not, like Playwright's
+	## `toBeAttached`. [Element.is_visible] makes the stronger claim.
+	exists : Element(AssertError(e)) -> Claim(AssertError(e))
+	exists = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.attached", Bool.False, |_r|
+				"${sel}: expected a matching element, but none exists")
+		},
+	}
+
+	## No element matches the selector at all. The strictest absence
+	## claim: [Element.is_hidden] also passes on an element that is
+	## present but invisible, this one does not. Like every single-element
+	## claim, a selector matching more than one element is a strict mode
+	## violation and fails with `ExpectError` rather than `AssertionFailed`.
+	not_exists : Element(AssertError(e)) -> Claim(AssertError(e))
+	not_exists = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.detached", Bool.False, |_r|
+				"${sel}: expected no matching element, but one exists")
+		},
+	}
+
+	## The element has no content: an empty value for an input or
+	## textarea, no text (after trimming whitespace) for anything else,
+	## like Playwright's `toBeEmpty`.
+	is_empty : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_empty = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.False, |r| match r {
+				Received(_) => "${sel}: expected to be empty, but it has content"
+				_ => "${sel}: expected to be empty, but no element matched the selector"
+			})
+		},
+	}
+
+	is_not_empty : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_not_empty = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.empty", Bool.True, |r| match r {
+				Received(_) => "${sel}: expected content, but it is empty"
+				_ => "${sel}: expected content, but no element matched the selector"
+			})
+		},
+	}
+
+	## The checkbox or radio button is checked. Fails with `ExpectError`
+	## on an element that is neither.
+	is_checked : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_checked = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_checked_impl!(el.page, t, sel, Bool.True, |r| match r {
+				Received(got) => "${sel}: expected to be checked, but it is ${got}"
+				_ => "${sel}: expected to be checked, but no element matched the selector"
+			})
+		},
+	}
+
+	is_unchecked : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_unchecked = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_checked_impl!(el.page, t, sel, Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be unchecked, but it is ${got}"
+				_ => "${sel}: expected to be unchecked, but no element matched the selector"
+			})
+		},
+	}
+
+	is_enabled : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_enabled = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.enabled", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be enabled, but it is ${got}"
+				_ => "${sel}: expected to be enabled, but no element matched the selector"
+			})
+		},
+	}
+
+	is_disabled : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_disabled = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.disabled", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be disabled, but it is ${got}"
+				_ => "${sel}: expected to be disabled, but no element matched the selector"
+			})
+		},
+	}
+}
+
+PlaywrightElements(err) := {
+	page : Page(err),
+	selector : Str,
+}.{
+	# Playwright functions that take an Elements first, forwarded so they stay methods (roc-lang/roc#12685).
+	filtered_any = |els, filter, want| Playwright.filtered_any(els, filter, want)
+	filtered_none = |els, filter, want| Playwright.filtered_none(els, filter, want)
+	filtered_all = |els, counter_filter, want| Playwright.filtered_all(els, counter_filter, want)
+	value_claim = |els, quantifier, want, ok| Playwright.value_claim(els, quantifier, want, ok)
+	attr_claim = |els, quantifier, name, want, ok| Playwright.attr_claim(els, quantifier, name, want, ok)
+	collect! = |els, i, n, acc, read!| Playwright.collect!(els, i, n, acc, read!)
+
+	count! : Elements([QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(U64, [QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
+	count! = |els| Playwright.query_count!(els.page, els.selector)
+
+	## The text of every match, in document order. One round trip for the
+	## count plus one per element, so prefer [Elements.has_count]
+	## when you only care how many there are.
+	texts! : Elements([TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e]) => Try(List(Str), [TextContentNotFound, TextContentError(Str), DecodeError, QueryCountError(Str), QueryCountNoResult, UnexpectedIntResponse(Str), ..e])
+	texts! = |els| {
+		n = els.count!()?
+		Playwright.collect!(els, 0, n, [], |el| el.text!())
+	}
+
+	## The `i`th match, counting from 0. Negative counts from the end.
+	nth : Elements(err), I64 -> Element(err)
+	nth = |els, i| Element.{ page: els.page, selector: els.selector, which: Nth(i) }
+
+	first : Elements(err) -> Element(err)
+	first = |els| els.nth(0)
+
+	last : Elements(err) -> Element(err)
+	last = |els| els.nth(-1)
+
+	## Claims about the collection as a whole, for [assert!]. These go
+	## through the driver's `expect` call and re-check the page until
+	## they hold or the timeout expires (the page's [Timeout], unless
+	## [assert_with!] overrides it), like the claims on [Element].
+
+	has_count : Elements(AssertError(e)), U64 -> Claim(AssertError(e))
+	has_count = |els, want| Claim.{
+		run!: |t| expect_count_impl!(els.page, t, els.selector, want, Bool.False, |r| match r {
+			Received(got) => "${els.selector}: expected ${want.to_str()} matches, got ${got}"
+			_ => "${els.selector}: expected ${want.to_str()} matches"
+		}),
+	}
+
+	is_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
+	is_empty = |els| els.has_count(0)
+
+	is_not_empty : Elements(AssertError(e)) -> Claim(AssertError(e))
+	is_not_empty = |els| Claim.{
+		run!: |t| expect_count_impl!(els.page, t, els.selector, 0, Bool.True, |_r|
+			"${els.selector}: expected at least one match, got none"),
+	}
+
+	## Exactly these texts, in document order, each after normalizing
+	## whitespace. The count must match too, so this subsumes
+	## [Elements.has_count]. Playwright's `toHaveText` with an array
+	## argument means the same thing.
+	has_texts : Elements(AssertError(e)), List(Str) -> Claim(AssertError(e))
+	has_texts = |els, want| Claim.{
+		run!: |t| {
+			want_str = Str.inspect(want)
+			expect_texts_impl!(els.page, t, els.selector, want, |r| match r {
+				Received(got) => "${els.selector}: expected texts ${want_str}, got ${got}"
+				_ => "${els.selector}: expected texts ${want_str}"
+			})
+		},
+	}
+
+	## Quantified claims: the same per-element expectations as on
+	## [Element], applied across every match (`all_`), at least one
+	## (`any_`), or none of them (`none_`). Playwright has no quantified
+	## assertions, so these are this package's own addition.
+	##
+	## The text and visibility families run as retried count claims on
+	## the selector composed with a filter engine, upstream's own idiom
+	## for quantifiers, so they re-check the page like every other
+	## driver-backed claim. Text is matched raw, without normalizing
+	## whitespace, unlike [Element.has_text]. The value and attribute
+	## families read live DOM properties no selector engine can see, so
+	## they stay one-shot: the claim is judged against the matches as
+	## they are at call time, and the page should be settled first, e.g.
+	## by asserting [Elements.has_count] before one of them.
+	##
+	## An empty set fails `all_` and `any_` claims rather than passing
+	## vacuously: the usual reason a set is empty is a selector typo, and
+	## silently passing is the worst thing a test can do. `none_` claims
+	## pass on an empty set, because nothing matching is the strongest
+	## form of the claimed absence. Pair one with [Elements.is_not_empty]
+	## when the matches must exist too. The non-vacuity makes `all_` two
+	## sequential retried checks, so a claim that never holds can take up
+	## to two timeouts to fail.
+
+	all_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	all_has_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+	any_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	any_has_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+	none_has_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	none_has_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/^${regex_escape(want)}$/", "to have text \"${want}\"")
+
+	all_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	all_contains_text = |els, want| Playwright.filtered_all(els, "internal:has-not-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+	any_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	any_contains_text = |els, want| Playwright.filtered_any(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+	none_contains_text : Elements(AssertError(e)), Str -> Claim(AssertError(e))
+	none_contains_text = |els, want| Playwright.filtered_none(els, "internal:has-text=/${regex_escape(want)}/", "to have text containing \"${want}\"")
+
+	all_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+	all_has_value = |els, want| Playwright.value_claim(els, All, "to have value \"${want}\"", |v| v == want)
+
+	any_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+	any_has_value = |els, want| Playwright.value_claim(els, Any, "to have value \"${want}\"", |v| v == want)
+
+	none_has_value : Elements(ValueAssertError(e)), Str -> Claim(ValueAssertError(e))
+	none_has_value = |els, want| Playwright.value_claim(els, None, "to have value \"${want}\"", |v| v == want)
+
+	all_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+	all_has_attribute = |els, name, want| Playwright.attr_claim(els, All, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+	any_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+	any_has_attribute = |els, name, want| Playwright.attr_claim(els, Any, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+	none_has_attribute : Elements(AttrAssertError(e)), Str, Str -> Claim(AttrAssertError(e))
+	none_has_attribute = |els, name, want| Playwright.attr_claim(els, None, name, "to have ${name}=\"${want}\"", |v| v == want)
+
+	all_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+	all_visible = |els| Playwright.filtered_all(els, "visible=false", "to be visible")
+
+	any_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+	any_visible = |els| Playwright.filtered_any(els, "visible=true", "to be visible")
+
+	none_visible : Elements(AssertError(e)) -> Claim(AssertError(e))
+	none_visible = |els| Playwright.filtered_none(els, "visible=true", "to be visible")
+
+	all_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+	all_hidden = |els| Playwright.filtered_all(els, "visible=true", "to be hidden")
+
+	any_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+	any_hidden = |els| Playwright.filtered_any(els, "visible=false", "to be hidden")
+
+	none_hidden : Elements(AssertError(e)) -> Claim(AssertError(e))
+	none_hidden = |els| Playwright.filtered_none(els, "visible=false", "to be hidden")
+}
+
+PlaywrightClaim(err) := {
+	run! : AssertTimeout => Try({}, err),
+}.{
+	# Playwright functions that take a Claim first, forwarded so they stay methods (roc-lang/roc#12685).
+	assert! = |claim| Playwright.assert!(claim)
+	assert_with! = |claim, options| Playwright.assert_with!(claim, options)
 }
 
 # Optional fields are `Try(x, [Missing])`: the builtin JSON parser decodes an
