@@ -3630,12 +3630,14 @@ settle! = |link, pending, intercepted, announced|
 	} else {
 		{ message, rest } = receive_message!(link.read_chunk!, pending)?
 		next = answer_route!(link, message, intercepted)?
-		settle!(link, rest, next, still_announced(message, announced))
+		settle!(link, rest, next, still_announced(link.routes, message, announced))
 	}
 
-## Whether a held request is announced but not yet routed after `message`.
-still_announced : List(U8), Bool -> Bool
-still_announced = |message, announced|
+## Whether a held request is announced but not yet routed after `message`. The
+## driver announces every navigation's request but holds only those `rules`
+## match, so a request no rule matches is never routed and is not waited for.
+still_announced : List(RouteRule), List(U8), Bool -> Bool
+still_announced = |rules, message, announced|
 	match decode_event(message) {
 		Err(_) => announced
 		Ok(event) =>
@@ -3643,13 +3645,33 @@ still_announced = |message, announced|
 				Bool.False
 			} else if event.method == Ok("__create__") {
 				match event.params {
-					Ok(params) => announced or params.type == Ok("Request") or params.type == Ok("Route")
+					Ok(params) => announced or params.type == Ok("Route") or (params.type == Ok("Request") and is_held(rules, params))
 					Err(_) => announced
 				}
 			} else {
 				announced
 			}
 	}
+
+## Whether `rules` hold the request a `__create__` announces.
+is_held : List(RouteRule), EventParams -> Bool
+is_held = |rules, params|
+	match params.initializer {
+		Ok(init) => {
+			request = { url: init.url ?? "", method: init.method ?? "" }
+			rules.any(|rule| rule_matches(rule, request))
+		}
+
+		Err(_) => Bool.False
+	}
+
+# A navigation's request, which the driver announces whether or not a rule holds it.
+announced_request : List(U8)
+announced_request = Str.to_utf8("{\"guid\":\"page@1\",\"method\":\"__create__\",\"params\":{\"type\":\"Request\",\"guid\":\"request@1\",\"initializer\":{\"url\":\"http://127.0.0.1/\",\"method\":\"GET\"}}}")
+
+expect !still_announced([], announced_request, Bool.False)
+expect !still_announced([{ pattern: "https://elsewhere.example/**", method: AnyMethod, action: Abort(Failed) }], announced_request, Bool.False)
+expect still_announced([{ pattern: "http://127.0.0.1/**", method: AnyMethod, action: Abort(Failed) }], announced_request, Bool.False)
 
 decode_create_message : List(U8) -> Try(CreateMessage, [DecodeError])
 decode_create_message = |bytes| decode_json(bytes)
