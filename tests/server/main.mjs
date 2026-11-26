@@ -698,6 +698,61 @@ const route_test_page = `<!DOCTYPE html>
 </body>
 </html>`;
 
+const select_test_page = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Test</title>
+</head>
+<body>
+    <h1>Select Test</h1>
+    <select id="color">
+        <option value="r">Red</option>
+        <option value="g">Green</option>
+        <option value="b">Blue</option>
+    </select>
+    <select id="toppings" multiple>
+        <option value="ham">Ham</option>
+        <option value="olives">Olives</option>
+        <option value="cheese">Cheese</option>
+    </select>
+    <p id="changes">changes: 0</p>
+    <script>
+        let changes = 0;
+        for (const select of document.querySelectorAll('select')) {
+            select.addEventListener('change', () => {
+                changes++;
+                document.getElementById('changes').textContent = 'changes: ' + changes;
+            });
+        }
+    </script>
+</body>
+</html>`;
+
+const focus_test_page = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Focus Test</title>
+</head>
+<body>
+    <h1>Focus Test</h1>
+    <input id="name" type="text">
+    <input id="email" type="text">
+    <p id="log"></p>
+    <script>
+        const log = [];
+        for (const id of ['name', 'email']) {
+            const input = document.getElementById(id);
+            for (const kind of ['focus', 'blur']) {
+                input.addEventListener(kind, () => {
+                    log.push(kind + ' ' + id);
+                    document.getElementById('log').textContent = log.join(', ');
+                });
+            }
+        }
+    </script>
+</body>
+</html>`;
+
 const routes = {
   "/": home_page,
   "/checkbox-test": checkbox_test_page,
@@ -723,6 +778,8 @@ const routes = {
   "/mouse-test": mouse_test_page,
   "/file-upload": file_upload_page,
   "/route-test": route_test_page,
+  "/select-test": select_test_page,
+  "/focus-test": focus_test_page,
 };
 
 http

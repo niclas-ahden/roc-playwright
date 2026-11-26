@@ -390,6 +390,18 @@ Playwright :: [].{
 		buffer : List(U8),
 	}
 
+	## Which options [select_option!] selects in a `<select>`, matched by
+	## their `value` attribute, their label (the text the user sees), either
+	## of the two (what Playwright does with a plain string), or their
+	## position from 0. A `<select multiple>` gets every match. A single
+	## select gets the first. An empty list deselects everything.
+	SelectOptions : [
+		Values(List(Str)),
+		Labels(List(Str)),
+		ValuesOrLabels(List(Str)),
+		Indexes(List(U64)),
+	]
+
 	## How a routed request is answered (see [with_routes!]): one of the
 	## answers in [RouteAnswer], given right away, or `Hold`, which keeps the
 	## request pending until [release!] gives the answer.
@@ -1005,6 +1017,37 @@ Playwright :: [].{
 
 		exec_command!(page, message_bytes, |m| SetInputFilesError(m))
 	}
+
+	## Select options in a `<select>` element, waiting for it to be attached
+	## and enabled, and dispatch `input` and `change` events as a user's
+	## selection does: Playwright's `selectOption`. Returns the values of the
+	## selected options.
+	##
+	## ```
+	## Playwright.select_option!(page, "#color", Values(["blue"]))?
+	## Playwright.select_option!(page, "#color", Labels(["Blue"]))?
+	## Playwright.select_option!(page, "#toppings", Indexes([0, 2]))?
+	## ```
+	select_option! : Page([SelectOptionError(Str), ..e]), Str, SelectOptions => Try(List(Str), [SelectOptionError(Str), ..e])
+	select_option! = |page, selector, options| select_option_impl!(page, selector, options, Bool.False)
+
+	## Focus an element, firing `focus` and `focusin` on it (and `blur` on
+	## whatever had focus): Playwright's `focus`.
+	##
+	## ```
+	## Playwright.focus!(page, "#email")?
+	## ```
+	focus! : Page([FocusError(Str), ..e]), Str => Try({}, [FocusError(Str), ..e])
+	focus! = |page, selector| focus_impl!(page, selector, Bool.False)
+
+	## Take focus away from an element, firing `blur` and `focusout` on it:
+	## Playwright's `blur`. Nothing happens to an element without focus.
+	##
+	## ```
+	## Playwright.blur!(page, "#email")?
+	## ```
+	blur! : Page([BlurError(Str), ..e]), Str => Try({}, [BlurError(Str), ..e])
+	blur! = |page, selector| blur_impl!(page, selector, Bool.False)
 
 	## Focus an element and type text character by character (keydown/keyup per char).
 	## See [key_type_targetless!] for the page-level variant.
@@ -1834,6 +1877,9 @@ PlaywrightPage(err) := {
 	set_checked! = |page, selector, desired| Playwright.set_checked!(page, selector, desired)
 	fill! = |page, selector, value| Playwright.fill!(page, selector, value)
 	set_input_files! = |page, selector, input_files| Playwright.set_input_files!(page, selector, input_files)
+	select_option! = |page, selector, options| Playwright.select_option!(page, selector, options)
+	focus! = |page, selector| Playwright.focus!(page, selector)
+	blur! = |page, selector| Playwright.blur!(page, selector)
 	key_type! = |page, selector, text| Playwright.key_type!(page, selector, text)
 	hover! = |page, selector| Playwright.hover!(page, selector)
 	is_visible! = |page, selector| Playwright.is_visible!(page, selector)
@@ -2038,6 +2084,15 @@ PlaywrightElement(err) := {
 
 	bounding_box! : Element([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]) => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
 	bounding_box! = |el| bounding_box_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	select_option! : Element([SelectOptionError(Str), ..e]), SelectOptions => Try(List(Str), [SelectOptionError(Str), ..e])
+	select_option! = |el, options| select_option_impl!(el.page, Playwright.resolve(el), options, Bool.True)
+
+	focus! : Element([FocusError(Str), ..e]) => Try({}, [FocusError(Str), ..e])
+	focus! = |el| focus_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	blur! : Element([BlurError(Str), ..e]) => Try({}, [BlurError(Str), ..e])
+	blur! = |el| blur_impl!(el.page, Playwright.resolve(el), Bool.True)
 
 	## The one descendant matching `selector`.
 	find : Element(err), Str -> Element(err)
@@ -2331,6 +2386,31 @@ PlaywrightElement(err) := {
 			expect_state_impl!(el.page, t, sel, "to.be.disabled", Bool.False, |r| match r {
 				Received(got) => "${sel}: expected to be disabled, but it is ${got}"
 				_ => "${sel}: expected to be disabled, but no element matched the selector"
+			})
+		},
+	}
+
+	## The element has focus, like Playwright's `toBeFocused`.
+	is_focused : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_focused = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.focused", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be focused, but it is ${got}"
+				_ => "${sel}: expected to be focused, but no element matched the selector"
+			})
+		},
+	}
+
+	## The element does not have focus. A missing element fails this claim,
+	## like the other `not_` claims.
+	is_not_focused : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_not_focused = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.focused", Bool.True, |r| match r {
+				Received(got) => "${sel}: expected not to be focused, but it is ${got}"
+				_ => "${sel}: expected not to be focused, but no element matched the selector"
 			})
 		},
 	}
@@ -2691,6 +2771,19 @@ FillParams : {
 	selector : Str,
 	value : Str,
 	strict : Bool,
+}
+
+# `option` is one of the four shapes selectOption takes ({ value }, { label },
+# { valueOrLabel } or { index }); see select_option_impl!.
+SelectOptionParams(option) : {
+	selector : Str,
+	strict : Bool,
+	options : List(option),
+}
+
+SelectOptionResponse : {
+	result : Try({ values : List(Str) }, [Missing]),
+	error : Try(ResponseError, [Missing]),
 }
 
 PressSequentiallyParams : {
@@ -3169,6 +3262,80 @@ hover_impl! = |page, selector, strict| {
 	params = { selector, strict }
 	msg = encode_request(msg_id, page.frame_guid, "hover", params, page_deadline(page))
 	exec_command!(page, msg, |m| HoverError(m))
+}
+
+focus_impl! = |page, selector, strict| {
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "focus", params, page_deadline(page))
+	exec_command!(page, msg, |m| FocusError(m))
+}
+
+blur_impl! = |page, selector, strict| {
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "blur", params, page_deadline(page))
+	exec_command!(page, msg, |m| BlurError(m))
+}
+
+# Each kind of [SelectOptions] is its own message shape, since the driver's
+# validator rejects null fields and a list holds one record type. An empty
+# list leaves `options` out, which is how Playwright's own client asks to
+# deselect everything.
+select_option_impl! = |page, selector, options, strict| {
+	deadline = page_deadline(page)
+	msg =
+		match options {
+			Values(values) if !values.is_empty() => {
+				params : SelectOptionParams({ value : Str })
+				params = { selector, strict, options: values.map(|value| { value: value }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			Labels(labels) if !labels.is_empty() => {
+				params : SelectOptionParams({ label : Str })
+				params = { selector, strict, options: labels.map(|label| { label: label }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			ValuesOrLabels(texts) if !texts.is_empty() => {
+				params : SelectOptionParams({ valueOrLabel : Str })
+				params = { selector, strict, options: texts.map(|text| { valueOrLabel: text }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			Indexes(indexes) if !indexes.is_empty() => {
+				params : SelectOptionParams({ index : U64 })
+				params = { selector, strict, options: indexes.map(|index| { index: index }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			_ => {
+				params : SelectorParams
+				params = { selector, strict }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+		}
+	link = send_to_page!(page, msg)?
+	read_until_id!(link, msg_id, |bytes| decode_selected_values(bytes))
+}
+
+decode_selected_values : List(U8) -> Try(List(Str), [SelectOptionError(Str)])
+decode_selected_values = |bytes| {
+	decoded : Try(SelectOptionResponse, [DecodeError])
+	decoded = decode_json(bytes)
+	match decoded {
+		Ok(response) =>
+			match response.error {
+				Ok(err) => Err(SelectOptionError(err.error.message))
+				Err(_) =>
+					match response.result {
+						Ok(result) => Ok(result.values)
+						Err(_) => Err(SelectOptionError(raw_message(bytes)))
+					}
+				}
+		Err(_) => Err(SelectOptionError(raw_message(bytes)))
+	}
 }
 
 text_content_impl! = |page, selector, strict| {
