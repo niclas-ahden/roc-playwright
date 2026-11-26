@@ -90,6 +90,15 @@ Playwright :: [].{
 	## or [launch_page!]. Almost every function in this module takes one.
 	Page(err) : PlaywrightPage(err)
 
+	## The fake clock of a page's browser context: Playwright's `page.clock`.
+	## Returned by [Page.clock]. Every page of the context shares it.
+	Clock(err) : PlaywrightClock(err)
+
+	## A page's `localStorage` or `sessionStorage` for the origin it shows:
+	## Playwright's `page.localStorage` and `page.sessionStorage`. Returned by
+	## [Page.local_storage] and [Page.session_storage].
+	WebStorage(err) : PlaywrightWebStorage(err)
+
 	## Which of a selector's matches an [Element] refers to. `Only` is what
 	## [Page.find] produces. `Nth` comes from [Elements.nth] and friends.
 	Which : [Only, Nth(I64)]
@@ -388,6 +397,29 @@ Playwright :: [].{
 		name : Str,
 		mime_type : Str,
 		buffer : List(U8),
+	}
+
+	## Which options [select_option!] selects in a `<select>`, matched by
+	## their `value` attribute, their label (the text the user sees), either
+	## of the two (what Playwright does with a plain string), or their
+	## position from 0. A `<select multiple>` gets every match. A single
+	## select gets the first. An empty list deselects everything.
+	SelectOptions : [
+		Values(List(Str)),
+		Labels(List(Str)),
+		ValuesOrLabels(List(Str)),
+		Indexes(List(U64)),
+	]
+
+	## A point in time for [Clock]: milliseconds since the Unix epoch, or a
+	## date string that JavaScript's `Date` parses, like
+	## `"2024-02-02T08:00:00"`.
+	ClockTime : [EpochMillis(I64), DateString(Str)]
+
+	## One entry of a [WebStorage].
+	StorageItem : {
+		name : Str,
+		value : Str,
 	}
 
 	## How a routed request is answered (see [with_routes!]): one of the
@@ -1005,6 +1037,37 @@ Playwright :: [].{
 
 		exec_command!(page, message_bytes, |m| SetInputFilesError(m))
 	}
+
+	## Select options in a `<select>` element, waiting for it to be attached
+	## and enabled, and dispatch `input` and `change` events as a user's
+	## selection does: Playwright's `selectOption`. Returns the values of the
+	## selected options.
+	##
+	## ```
+	## Playwright.select_option!(page, "#color", Values(["blue"]))?
+	## Playwright.select_option!(page, "#color", Labels(["Blue"]))?
+	## Playwright.select_option!(page, "#toppings", Indexes([0, 2]))?
+	## ```
+	select_option! : Page([SelectOptionError(Str), ..e]), Str, SelectOptions => Try(List(Str), [SelectOptionError(Str), ..e])
+	select_option! = |page, selector, options| select_option_impl!(page, selector, options, Bool.False)
+
+	## Focus an element, firing `focus` and `focusin` on it (and `blur` on
+	## whatever had focus): Playwright's `focus`.
+	##
+	## ```
+	## Playwright.focus!(page, "#email")?
+	## ```
+	focus! : Page([FocusError(Str), ..e]), Str => Try({}, [FocusError(Str), ..e])
+	focus! = |page, selector| focus_impl!(page, selector, Bool.False)
+
+	## Take focus away from an element, firing `blur` and `focusout` on it:
+	## Playwright's `blur`. Nothing happens to an element without focus.
+	##
+	## ```
+	## Playwright.blur!(page, "#email")?
+	## ```
+	blur! : Page([BlurError(Str), ..e]), Str => Try({}, [BlurError(Str), ..e])
+	blur! = |page, selector| blur_impl!(page, selector, Bool.False)
 
 	## Focus an element and type text character by character (keydown/keyup per char).
 	## See [key_type_targetless!] for the page-level variant.
@@ -1834,6 +1897,9 @@ PlaywrightPage(err) := {
 	set_checked! = |page, selector, desired| Playwright.set_checked!(page, selector, desired)
 	fill! = |page, selector, value| Playwright.fill!(page, selector, value)
 	set_input_files! = |page, selector, input_files| Playwright.set_input_files!(page, selector, input_files)
+	select_option! = |page, selector, options| Playwright.select_option!(page, selector, options)
+	focus! = |page, selector| Playwright.focus!(page, selector)
+	blur! = |page, selector| Playwright.blur!(page, selector)
 	key_type! = |page, selector, text| Playwright.key_type!(page, selector, text)
 	hover! = |page, selector| Playwright.hover!(page, selector)
 	is_visible! = |page, selector| Playwright.is_visible!(page, selector)
@@ -1882,6 +1948,36 @@ PlaywrightPage(err) := {
 	## ```
 	find_all : Page(err), Str -> Elements(err)
 	find_all = |page, selector| Elements.{ page, selector }
+
+	## The fake clock of the page's browser context, for testing code that
+	## reads the time or waits on timers. The page keeps the real clock
+	## until a [Clock] call changes it, usually [Clock.install!]. Lazy like
+	## [Page.find]: nothing is sent to the driver until you use it.
+	##
+	## ```
+	## clock = page.clock()
+	## clock.install_at!(DateString("2024-02-02T08:00:00"))?
+	## clock.pause_at!(DateString("2024-02-02T08:00:01"))?
+	## page.navigate!(url)?
+	## clock.run_for!(2000)?
+	## assert!(page.find("#toast").is_hidden())?
+	## ```
+	clock : Page(err) -> Clock(err)
+	clock = |page| Clock.{ page }
+
+	## The page's `localStorage`, for the origin it shows. Lazy like
+	## [Page.find].
+	##
+	## ```
+	## token = page.local_storage().get_item!("token")?
+	## ```
+	local_storage : Page(err) -> WebStorage(err)
+	local_storage = |page| WebStorage.{ page, kind: Local }
+
+	## The page's `sessionStorage`, for the origin it shows. Lazy like
+	## [Page.find].
+	session_storage : Page(err) -> WebStorage(err)
+	session_storage = |page| WebStorage.{ page, kind: Session }
 
 	## Claims about the page itself, for [assert!]. Asserting one
 	## re-checks the page until it holds or the timeout expires (the
@@ -2038,6 +2134,15 @@ PlaywrightElement(err) := {
 
 	bounding_box! : Element([BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e]) => Try(BoundingBox, [BoundingBoxError(Str), ElementNotFound, ElementNotVisible, WaitForTimeout(Str), ..e])
 	bounding_box! = |el| bounding_box_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	select_option! : Element([SelectOptionError(Str), ..e]), SelectOptions => Try(List(Str), [SelectOptionError(Str), ..e])
+	select_option! = |el, options| select_option_impl!(el.page, Playwright.resolve(el), options, Bool.True)
+
+	focus! : Element([FocusError(Str), ..e]) => Try({}, [FocusError(Str), ..e])
+	focus! = |el| focus_impl!(el.page, Playwright.resolve(el), Bool.True)
+
+	blur! : Element([BlurError(Str), ..e]) => Try({}, [BlurError(Str), ..e])
+	blur! = |el| blur_impl!(el.page, Playwright.resolve(el), Bool.True)
 
 	## The one descendant matching `selector`.
 	find : Element(err), Str -> Element(err)
@@ -2333,6 +2438,139 @@ PlaywrightElement(err) := {
 				_ => "${sel}: expected to be disabled, but no element matched the selector"
 			})
 		},
+	}
+
+	## The element has focus, like Playwright's `toBeFocused`.
+	is_focused : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_focused = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.focused", Bool.False, |r| match r {
+				Received(got) => "${sel}: expected to be focused, but it is ${got}"
+				_ => "${sel}: expected to be focused, but no element matched the selector"
+			})
+		},
+	}
+
+	## The element does not have focus. A missing element fails this claim,
+	## like the other `not_` claims.
+	is_not_focused : Element(AssertError(e)) -> Claim(AssertError(e))
+	is_not_focused = |el| Claim.{
+		run!: |t| {
+			sel = Playwright.resolve(el)
+			expect_state_impl!(el.page, t, sel, "to.be.focused", Bool.True, |r| match r {
+				Received(got) => "${sel}: expected not to be focused, but it is ${got}"
+				_ => "${sel}: expected not to be focused, but no element matched the selector"
+			})
+		},
+	}
+}
+
+PlaywrightClock(err) := {
+	page : Page(err),
+}.{
+	## Install the fake clock, starting at the current time: Playwright's
+	## `clock.install()`. It replaces `Date`, `setTimeout`, `setInterval`,
+	## `requestAnimationFrame`, `performance.now()` and the other timer APIs
+	## in every page of the context. Install it before the page loads
+	## (before [Page.navigate!]) so the page's code sees the fake timers from
+	## the start. The clock then keeps advancing with real time. [pause_at!]
+	## pauses it, so that it advances only with [run_for!] and
+	## [fast_forward!], which gives a test exact times.
+	install! : Clock([ClockError(Str), ..e]) => Try({}, [ClockError(Str), ..e])
+	install! = |clock| clock_command!(clock, "clockInstall", {})
+
+	## [install!], starting at `time`: Playwright's `clock.install({ time })`.
+	install_at! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	install_at! = |clock, time| clock_time_command!(clock, "clockInstall", time)
+
+	## Move the clock forward by `millis`, firing each due timer at most
+	## once, as when a laptop wakes from sleep: Playwright's
+	## `clock.fastForward()`.
+	fast_forward! : Clock([ClockError(Str), ..e]), U64 => Try({}, [ClockError(Str), ..e])
+	fast_forward! = |clock, millis| clock_command!(clock, "clockFastForward", { ticksNumber: millis })
+
+	## Advance the clock by `millis`, firing every timer due on the way, in
+	## order and as often as it repeats: Playwright's `clock.runFor()`.
+	run_for! : Clock([ClockError(Str), ..e]), U64 => Try({}, [ClockError(Str), ..e])
+	run_for! = |clock, millis| clock_command!(clock, "clockRunFor", { ticksNumber: millis })
+
+	## Move the clock to `time`, firing the timers due before it, and pause:
+	## no timer fires until [run_for!], [fast_forward!] or [resume!].
+	## Playwright's `clock.pauseAt()`.
+	pause_at! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	pause_at! = |clock, time| clock_time_command!(clock, "clockPauseAt", time)
+
+	## Resume a paused clock, so it advances with real time again:
+	## Playwright's `clock.resume()`.
+	resume! : Clock([ClockError(Str), ..e]) => Try({}, [ClockError(Str), ..e])
+	resume! = |clock| clock_command!(clock, "clockResume", {})
+
+	## Make `Date.now()` and `new Date()` always return `time`, while timers
+	## keep running: Playwright's `clock.setFixedTime()`. Needs no
+	## [install!].
+	set_fixed_time! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	set_fixed_time! = |clock, time| clock_time_command!(clock, "clockSetFixedTime", time)
+
+	## Set the wall-clock time to `time` without firing any timer, as when
+	## the user changes the system clock: Playwright's
+	## `clock.setSystemTime()`.
+	set_system_time! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	set_system_time! = |clock, time| clock_time_command!(clock, "clockSetSystemTime", time)
+}
+
+PlaywrightWebStorage(err) := {
+	page : Page(err),
+	kind : [Local, Session],
+}.{
+	## The value stored under `name`, or `StorageItemNotFound`:
+	## Playwright's `getItem`.
+	get_item! : WebStorage([WebStorageError(Str), StorageItemNotFound, UnexpectedStringResponse(Str), ..e]), Str => Try(Str, [WebStorageError(Str), StorageItemNotFound, UnexpectedStringResponse(Str), ..e])
+	get_item! = |storage, name| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name }
+		msg = encode_request(msg_id, page.page_guid, "webStorageGetItem", params, NoDeadline)
+		exec_string_command!(page, msg, |m| WebStorageError(m), StorageItemNotFound)
+	}
+
+	## Every item in the storage, in the browser's order: Playwright's
+	## `items`.
+	items! : WebStorage([WebStorageError(Str), ..e]) => Try(List(StorageItem), [WebStorageError(Str), ..e])
+	items! = |storage| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind) }
+		msg = encode_request(msg_id, page.page_guid, "webStorageItems", params, NoDeadline)
+		link = send_to_page!(page, msg)?
+		read_until_id!(link, msg_id, |bytes| decode_storage_items(bytes))
+	}
+
+	## Store `value` under `name`, replacing what was there: Playwright's
+	## `setItem`.
+	set_item! : WebStorage([WebStorageError(Str), ..e]), Str, Str => Try({}, [WebStorageError(Str), ..e])
+	set_item! = |storage, name, value| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name, value }
+		msg = encode_request(msg_id, page.page_guid, "webStorageSetItem", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
+	}
+
+	## Remove the item stored under `name`, if any: Playwright's
+	## `removeItem`.
+	remove_item! : WebStorage([WebStorageError(Str), ..e]), Str => Try({}, [WebStorageError(Str), ..e])
+	remove_item! = |storage, name| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name }
+		msg = encode_request(msg_id, page.page_guid, "webStorageRemoveItem", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
+	}
+
+	## Remove every item: Playwright's `clear`.
+	clear! : WebStorage([WebStorageError(Str), ..e]) => Try({}, [WebStorageError(Str), ..e])
+	clear! = |storage| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind) }
+		msg = encode_request(msg_id, page.page_guid, "webStorageClear", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
 	}
 }
 
@@ -2691,6 +2929,24 @@ FillParams : {
 	selector : Str,
 	value : Str,
 	strict : Bool,
+}
+
+# `option` is one of the four shapes selectOption takes ({ value }, { label },
+# { valueOrLabel } or { index }); see select_option_impl!.
+SelectOptionParams(option) : {
+	selector : Str,
+	strict : Bool,
+	options : List(option),
+}
+
+SelectOptionResponse : {
+	result : Try({ values : List(Str) }, [Missing]),
+	error : Try(ResponseError, [Missing]),
+}
+
+StorageItemsResponse : {
+	result : Try({ items : List({ name : Str, value : Str }) }, [Missing]),
+	error : Try(ResponseError, [Missing]),
 }
 
 PressSequentiallyParams : {
@@ -3169,6 +3425,120 @@ hover_impl! = |page, selector, strict| {
 	params = { selector, strict }
 	msg = encode_request(msg_id, page.frame_guid, "hover", params, page_deadline(page))
 	exec_command!(page, msg, |m| HoverError(m))
+}
+
+focus_impl! = |page, selector, strict| {
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "focus", params, page_deadline(page))
+	exec_command!(page, msg, |m| FocusError(m))
+}
+
+blur_impl! = |page, selector, strict| {
+	params : SelectorParams
+	params = { selector, strict }
+	msg = encode_request(msg_id, page.frame_guid, "blur", params, page_deadline(page))
+	exec_command!(page, msg, |m| BlurError(m))
+}
+
+# Each kind of [SelectOptions] is its own message shape, since the driver's
+# validator rejects null fields and a list holds one record type. An empty
+# list leaves `options` out, which is how Playwright's own client asks to
+# deselect everything.
+select_option_impl! = |page, selector, options, strict| {
+	deadline = page_deadline(page)
+	msg =
+		match options {
+			Values(values) if !values.is_empty() => {
+				params : SelectOptionParams({ value : Str })
+				params = { selector, strict, options: values.map(|value| { value: value }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			Labels(labels) if !labels.is_empty() => {
+				params : SelectOptionParams({ label : Str })
+				params = { selector, strict, options: labels.map(|label| { label: label }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			ValuesOrLabels(texts) if !texts.is_empty() => {
+				params : SelectOptionParams({ valueOrLabel : Str })
+				params = { selector, strict, options: texts.map(|text| { valueOrLabel: text }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			Indexes(indexes) if !indexes.is_empty() => {
+				params : SelectOptionParams({ index : U64 })
+				params = { selector, strict, options: indexes.map(|index| { index: index }) }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+
+			_ => {
+				params : SelectorParams
+				params = { selector, strict }
+				encode_request(msg_id, page.frame_guid, "selectOption", params, deadline)
+			}
+		}
+	link = send_to_page!(page, msg)?
+	read_until_id!(link, msg_id, |bytes| decode_selected_values(bytes))
+}
+
+decode_selected_values : List(U8) -> Try(List(Str), [SelectOptionError(Str)])
+decode_selected_values = |bytes| {
+	decoded : Try(SelectOptionResponse, [DecodeError])
+	decoded = decode_json(bytes)
+	match decoded {
+		Ok(response) =>
+			match response.error {
+				Ok(err) => Err(SelectOptionError(err.error.message))
+				Err(_) =>
+					match response.result {
+						Ok(result) => Ok(result.values)
+						Err(_) => Err(SelectOptionError(raw_message(bytes)))
+					}
+				}
+		Err(_) => Err(SelectOptionError(raw_message(bytes)))
+	}
+}
+
+# The clock commands go to the page's browser context, which owns the clock.
+# Their replies are read with the page's routes, so a request held by
+# with_routes! still gets its answer while a command waits. None of them
+# waits on the page, so none has a timeout, as in Playwright's own client.
+clock_command! = |clock, method, params| {
+	page = clock.page
+	msg = encode_request(msg_id, page.context.context_guid, method, params, NoDeadline)
+	exec_command!(page, msg, |m| ClockError(m))
+}
+
+clock_time_command! = |clock, method, time|
+	match time {
+		EpochMillis(ms) => clock_command!(clock, method, { timeNumber: ms })
+		DateString(text) => clock_command!(clock, method, { timeString: text })
+	}
+
+storage_kind_str : [Local, Session] -> Str
+storage_kind_str = |kind| match kind {
+	Local => "local"
+	Session => "session"
+}
+
+decode_storage_items : List(U8) -> Try(List(Playwright.StorageItem), [WebStorageError(Str)])
+decode_storage_items = |bytes| {
+	decoded : Try(StorageItemsResponse, [DecodeError])
+	decoded = decode_json(bytes)
+	match decoded {
+		Ok(response) =>
+			match response.error {
+				Ok(err) => Err(WebStorageError(err.error.message))
+				Err(_) =>
+					match response.result {
+						Ok(result) => Ok(result.items.map(|item| { name: item.name, value: item.value }))
+						Err(_) => Err(WebStorageError(raw_message(bytes)))
+					}
+				}
+		Err(_) => Err(WebStorageError(raw_message(bytes)))
+	}
 }
 
 text_content_impl! = |page, selector, strict| {
