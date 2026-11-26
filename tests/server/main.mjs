@@ -753,6 +753,25 @@ const focus_test_page = `<!DOCTYPE html>
 </body>
 </html>`;
 
+const clock_test_page = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Clock Test</title>
+</head>
+<body>
+    <h1>Clock Test</h1>
+    <p id="loaded-at"></p>
+    <p id="timeout">waiting</p>
+    <p id="ticks">0</p>
+    <script>
+        document.getElementById('loaded-at').textContent = new Date().toISOString();
+        setTimeout(() => { document.getElementById('timeout').textContent = 'fired'; }, 5000);
+        let ticks = 0;
+        setInterval(() => { ticks++; document.getElementById('ticks').textContent = String(ticks); }, 1000);
+    </script>
+</body>
+</html>`;
+
 const routes = {
   "/": home_page,
   "/checkbox-test": checkbox_test_page,
@@ -780,6 +799,7 @@ const routes = {
   "/route-test": route_test_page,
   "/select-test": select_test_page,
   "/focus-test": focus_test_page,
+  "/clock-test": clock_test_page,
 };
 
 http

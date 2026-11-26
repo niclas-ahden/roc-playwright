@@ -83,6 +83,22 @@ page.with_routes!([{ pattern: "**/todos", method: POST, action: Hold }], |routed
 
 Patterns are Playwright's URL globs (`*`, `**/`, `{a,b}` with `\` to escape) matched against the whole URL, query string included: a request for `/reviews.json?limit=20` needs `**/reviews.json*`.
 
+## Fake clock
+
+`page.clock()` is Playwright's `page.clock`: a fake clock for the page's browser context, so a test can check a toast that hides after five seconds, or a date picker on a fixed day, without waiting or racing real time. Install it before the page loads. An installed clock keeps advancing with real time, so pause it, then advance it yourself:
+
+```roc
+clock = page.clock()
+clock.install_at!(DateString("2024-02-02T08:00:00Z"))?
+clock.pause_at!(DateString("2024-02-02T08:00:01Z"))?
+page.navigate!("http://localhost:8000/")?
+page.find("#save").click!()?
+clock.run_for!(5000)?
+assert!(page.find(".toast").is_hidden())?
+```
+
+`run_for!` fires every timer due on the way, `fast_forward!` fires each due timer once (as when a laptop wakes from sleep), `pause_at!` and `resume!` pause and resume the clock, and `set_fixed_time!` and `set_system_time!` change what `Date` says.
+
 ## Documentation
 
 View the full API documentation at [https://niclas-ahden.github.io/roc-playwright/](https://niclas-ahden.github.io/roc-playwright/).

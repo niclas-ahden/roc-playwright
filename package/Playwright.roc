@@ -90,6 +90,10 @@ Playwright :: [].{
 	## or [launch_page!]. Almost every function in this module takes one.
 	Page(err) : PlaywrightPage(err)
 
+	## The fake clock of a page's browser context: Playwright's `page.clock`.
+	## Returned by [Page.clock]. Every page of the context shares it.
+	Clock(err) : PlaywrightClock(err)
+
 	## Which of a selector's matches an [Element] refers to. `Only` is what
 	## [Page.find] produces. `Nth` comes from [Elements.nth] and friends.
 	Which : [Only, Nth(I64)]
@@ -401,6 +405,11 @@ Playwright :: [].{
 		ValuesOrLabels(List(Str)),
 		Indexes(List(U64)),
 	]
+
+	## A point in time for [Clock]: milliseconds since the Unix epoch, or a
+	## date string that JavaScript's `Date` parses, like
+	## `"2024-02-02T08:00:00"`.
+	ClockTime : [EpochMillis(I64), DateString(Str)]
 
 	## How a routed request is answered (see [with_routes!]): one of the
 	## answers in [RouteAnswer], given right away, or `Hold`, which keeps the
@@ -1929,6 +1938,22 @@ PlaywrightPage(err) := {
 	find_all : Page(err), Str -> Elements(err)
 	find_all = |page, selector| Elements.{ page, selector }
 
+	## The fake clock of the page's browser context, for testing code that
+	## reads the time or waits on timers. The page keeps the real clock
+	## until a [Clock] call changes it, usually [Clock.install!]. Lazy like
+	## [Page.find]: nothing is sent to the driver until you use it.
+	##
+	## ```
+	## clock = page.clock()
+	## clock.install_at!(DateString("2024-02-02T08:00:00"))?
+	## clock.pause_at!(DateString("2024-02-02T08:00:01"))?
+	## page.navigate!(url)?
+	## clock.run_for!(2000)?
+	## assert!(page.find("#toast").is_hidden())?
+	## ```
+	clock : Page(err) -> Clock(err)
+	clock = |page| Clock.{ page }
+
 	## Claims about the page itself, for [assert!]. Asserting one
 	## re-checks the page until it holds or the timeout expires (the
 	## page's [Timeout], unless [assert_with!] overrides it), like the
@@ -2414,6 +2439,59 @@ PlaywrightElement(err) := {
 			})
 		},
 	}
+}
+
+PlaywrightClock(err) := {
+	page : Page(err),
+}.{
+	## Install the fake clock, starting at the current time: Playwright's
+	## `clock.install()`. It replaces `Date`, `setTimeout`, `setInterval`,
+	## `requestAnimationFrame`, `performance.now()` and the other timer APIs
+	## in every page of the context. Install it before the page loads
+	## (before [Page.navigate!]) so the page's code sees the fake timers from
+	## the start. The clock then keeps advancing with real time. [pause_at!]
+	## pauses it, so that it advances only with [run_for!] and
+	## [fast_forward!], which gives a test exact times.
+	install! : Clock([ClockError(Str), ..e]) => Try({}, [ClockError(Str), ..e])
+	install! = |clock| clock_command!(clock, "clockInstall", {})
+
+	## [install!], starting at `time`: Playwright's `clock.install({ time })`.
+	install_at! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	install_at! = |clock, time| clock_time_command!(clock, "clockInstall", time)
+
+	## Move the clock forward by `millis`, firing each due timer at most
+	## once, as when a laptop wakes from sleep: Playwright's
+	## `clock.fastForward()`.
+	fast_forward! : Clock([ClockError(Str), ..e]), U64 => Try({}, [ClockError(Str), ..e])
+	fast_forward! = |clock, millis| clock_command!(clock, "clockFastForward", { ticksNumber: millis })
+
+	## Advance the clock by `millis`, firing every timer due on the way, in
+	## order and as often as it repeats: Playwright's `clock.runFor()`.
+	run_for! : Clock([ClockError(Str), ..e]), U64 => Try({}, [ClockError(Str), ..e])
+	run_for! = |clock, millis| clock_command!(clock, "clockRunFor", { ticksNumber: millis })
+
+	## Move the clock to `time`, firing the timers due before it, and pause:
+	## no timer fires until [run_for!], [fast_forward!] or [resume!].
+	## Playwright's `clock.pauseAt()`.
+	pause_at! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	pause_at! = |clock, time| clock_time_command!(clock, "clockPauseAt", time)
+
+	## Resume a paused clock, so it advances with real time again:
+	## Playwright's `clock.resume()`.
+	resume! : Clock([ClockError(Str), ..e]) => Try({}, [ClockError(Str), ..e])
+	resume! = |clock| clock_command!(clock, "clockResume", {})
+
+	## Make `Date.now()` and `new Date()` always return `time`, while timers
+	## keep running: Playwright's `clock.setFixedTime()`. Needs no
+	## [install!].
+	set_fixed_time! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	set_fixed_time! = |clock, time| clock_time_command!(clock, "clockSetFixedTime", time)
+
+	## Set the wall-clock time to `time` without firing any timer, as when
+	## the user changes the system clock: Playwright's
+	## `clock.setSystemTime()`.
+	set_system_time! : Clock([ClockError(Str), ..e]), ClockTime => Try({}, [ClockError(Str), ..e])
+	set_system_time! = |clock, time| clock_time_command!(clock, "clockSetSystemTime", time)
 }
 
 PlaywrightElements(err) := {
@@ -3337,6 +3415,22 @@ decode_selected_values = |bytes| {
 		Err(_) => Err(SelectOptionError(raw_message(bytes)))
 	}
 }
+
+# The clock commands go to the page's browser context, which owns the clock.
+# Their replies are read with the page's routes, so a request held by
+# with_routes! still gets its answer while a command waits. None of them
+# waits on the page, so none has a timeout, as in Playwright's own client.
+clock_command! = |clock, method, params| {
+	page = clock.page
+	msg = encode_request(msg_id, page.context.context_guid, method, params, NoDeadline)
+	exec_command!(page, msg, |m| ClockError(m))
+}
+
+clock_time_command! = |clock, method, time|
+	match time {
+		EpochMillis(ms) => clock_command!(clock, method, { timeNumber: ms })
+		DateString(text) => clock_command!(clock, method, { timeString: text })
+	}
 
 text_content_impl! = |page, selector, strict| {
 	params : SelectorParams
