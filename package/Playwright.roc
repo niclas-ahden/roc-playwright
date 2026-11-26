@@ -94,6 +94,11 @@ Playwright :: [].{
 	## Returned by [Page.clock]. Every page of the context shares it.
 	Clock(err) : PlaywrightClock(err)
 
+	## A page's `localStorage` or `sessionStorage` for the origin it shows:
+	## Playwright's `page.localStorage` and `page.sessionStorage`. Returned by
+	## [Page.local_storage] and [Page.session_storage].
+	WebStorage(err) : PlaywrightWebStorage(err)
+
 	## Which of a selector's matches an [Element] refers to. `Only` is what
 	## [Page.find] produces. `Nth` comes from [Elements.nth] and friends.
 	Which : [Only, Nth(I64)]
@@ -410,6 +415,12 @@ Playwright :: [].{
 	## date string that JavaScript's `Date` parses, like
 	## `"2024-02-02T08:00:00"`.
 	ClockTime : [EpochMillis(I64), DateString(Str)]
+
+	## One entry of a [WebStorage].
+	StorageItem : {
+		name : Str,
+		value : Str,
+	}
 
 	## How a routed request is answered (see [with_routes!]): one of the
 	## answers in [RouteAnswer], given right away, or `Hold`, which keeps the
@@ -1954,6 +1965,20 @@ PlaywrightPage(err) := {
 	clock : Page(err) -> Clock(err)
 	clock = |page| Clock.{ page }
 
+	## The page's `localStorage`, for the origin it shows. Lazy like
+	## [Page.find].
+	##
+	## ```
+	## token = page.local_storage().get_item!("token")?
+	## ```
+	local_storage : Page(err) -> WebStorage(err)
+	local_storage = |page| WebStorage.{ page, kind: Local }
+
+	## The page's `sessionStorage`, for the origin it shows. Lazy like
+	## [Page.find].
+	session_storage : Page(err) -> WebStorage(err)
+	session_storage = |page| WebStorage.{ page, kind: Session }
+
 	## Claims about the page itself, for [assert!]. Asserting one
 	## re-checks the page until it holds or the timeout expires (the
 	## page's [Timeout], unless [assert_with!] overrides it), like the
@@ -2494,6 +2519,61 @@ PlaywrightClock(err) := {
 	set_system_time! = |clock, time| clock_time_command!(clock, "clockSetSystemTime", time)
 }
 
+PlaywrightWebStorage(err) := {
+	page : Page(err),
+	kind : [Local, Session],
+}.{
+	## The value stored under `name`, or `StorageItemNotFound`:
+	## Playwright's `getItem`.
+	get_item! : WebStorage([WebStorageError(Str), StorageItemNotFound, UnexpectedStringResponse(Str), ..e]), Str => Try(Str, [WebStorageError(Str), StorageItemNotFound, UnexpectedStringResponse(Str), ..e])
+	get_item! = |storage, name| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name }
+		msg = encode_request(msg_id, page.page_guid, "webStorageGetItem", params, NoDeadline)
+		exec_string_command!(page, msg, |m| WebStorageError(m), StorageItemNotFound)
+	}
+
+	## Every item in the storage, in the browser's order: Playwright's
+	## `items`.
+	items! : WebStorage([WebStorageError(Str), ..e]) => Try(List(StorageItem), [WebStorageError(Str), ..e])
+	items! = |storage| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind) }
+		msg = encode_request(msg_id, page.page_guid, "webStorageItems", params, NoDeadline)
+		link = send_to_page!(page, msg)?
+		read_until_id!(link, msg_id, |bytes| decode_storage_items(bytes))
+	}
+
+	## Store `value` under `name`, replacing what was there: Playwright's
+	## `setItem`.
+	set_item! : WebStorage([WebStorageError(Str), ..e]), Str, Str => Try({}, [WebStorageError(Str), ..e])
+	set_item! = |storage, name, value| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name, value }
+		msg = encode_request(msg_id, page.page_guid, "webStorageSetItem", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
+	}
+
+	## Remove the item stored under `name`, if any: Playwright's
+	## `removeItem`.
+	remove_item! : WebStorage([WebStorageError(Str), ..e]), Str => Try({}, [WebStorageError(Str), ..e])
+	remove_item! = |storage, name| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind), name }
+		msg = encode_request(msg_id, page.page_guid, "webStorageRemoveItem", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
+	}
+
+	## Remove every item: Playwright's `clear`.
+	clear! : WebStorage([WebStorageError(Str), ..e]) => Try({}, [WebStorageError(Str), ..e])
+	clear! = |storage| {
+		page = storage.page
+		params = { kind: storage_kind_str(storage.kind) }
+		msg = encode_request(msg_id, page.page_guid, "webStorageClear", params, NoDeadline)
+		exec_command!(page, msg, |m| WebStorageError(m))
+	}
+}
+
 PlaywrightElements(err) := {
 	page : Page(err),
 	selector : Str,
@@ -2861,6 +2941,11 @@ SelectOptionParams(option) : {
 
 SelectOptionResponse : {
 	result : Try({ values : List(Str) }, [Missing]),
+	error : Try(ResponseError, [Missing]),
+}
+
+StorageItemsResponse : {
+	result : Try({ items : List({ name : Str, value : Str }) }, [Missing]),
 	error : Try(ResponseError, [Missing]),
 }
 
@@ -3431,6 +3516,30 @@ clock_time_command! = |clock, method, time|
 		EpochMillis(ms) => clock_command!(clock, method, { timeNumber: ms })
 		DateString(text) => clock_command!(clock, method, { timeString: text })
 	}
+
+storage_kind_str : [Local, Session] -> Str
+storage_kind_str = |kind| match kind {
+	Local => "local"
+	Session => "session"
+}
+
+decode_storage_items : List(U8) -> Try(List(Playwright.StorageItem), [WebStorageError(Str)])
+decode_storage_items = |bytes| {
+	decoded : Try(StorageItemsResponse, [DecodeError])
+	decoded = decode_json(bytes)
+	match decoded {
+		Ok(response) =>
+			match response.error {
+				Ok(err) => Err(WebStorageError(err.error.message))
+				Err(_) =>
+					match response.result {
+						Ok(result) => Ok(result.items.map(|item| { name: item.name, value: item.value }))
+						Err(_) => Err(WebStorageError(raw_message(bytes)))
+					}
+				}
+		Err(_) => Err(WebStorageError(raw_message(bytes)))
+	}
+}
 
 text_content_impl! = |page, selector, strict| {
 	params : SelectorParams

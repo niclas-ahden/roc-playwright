@@ -99,6 +99,17 @@ assert!(page.find(".toast").is_hidden())?
 
 `run_for!` fires every timer due on the way, `fast_forward!` fires each due timer once (as when a laptop wakes from sleep), `pause_at!` and `resume!` pause and resume the clock, and `set_fixed_time!` and `set_system_time!` change what `Date` says.
 
+## Web storage
+
+`page.local_storage()` and `page.session_storage()` read and write the page's storage for the origin it shows, through Playwright's own web storage calls rather than JavaScript strings:
+
+```roc
+page.find("#theme-toggle").click!()?
+theme = page.local_storage().get_item!("theme")?
+```
+
+`get_item!` fails with `StorageItemNotFound` when no item has that name. `items!`, `set_item!`, `remove_item!` and `clear!` do the rest.
+
 ## Documentation
 
 View the full API documentation at [https://niclas-ahden.github.io/roc-playwright/](https://niclas-ahden.github.io/roc-playwright/).
